@@ -35,8 +35,6 @@ def _state_passing_fwd_kernel(
     stride_out_batch, stride_out_chunk, stride_out_head, stride_out_dim,
     stride_final_states_batch, stride_final_states_head, stride_final_states_dim,
     stride_dA_cs_batch, stride_dA_cs_chunk, stride_dA_cs_head,
-    stride_initstates_batch, stride_initstates_head, stride_initstates_dim,
-    stride_seq_idx_batch, stride_seq_idx_seqlen,
     # Meta-parameters
     REVERSE: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
@@ -197,33 +195,22 @@ def _state_passing_bwd_kernel(
         tl.store(dinitstates_ptr + offs_m * stride_dinitstates_dim, dstates, mask=offs_m < dim)
 
 
-def _state_passing_fwd(states, dA_chunk_cumsum, initial_states=None, seq_idx=None, chunk_size=None,
-                       out_dtype=None):
+def _state_passing_fwd(states, dA_chunk_cumsum, chunk_size=None, out_dtype=None, reverse=False):
     batch, nchunks, nheads, dim = states.shape
     assert dA_chunk_cumsum.shape == (batch, nheads, nchunks)
-    if initial_states is not None:
-        assert initial_states.shape == (batch, nheads, dim)
-    if seq_idx is not None:
-        assert chunk_size is not None
-        seqlen = seq_idx.shape[-1]
-        assert seq_idx.shape == (batch, seqlen)
     out_dtype = states.dtype if out_dtype is None else out_dtype
     out = torch.empty((batch, nchunks, nheads, dim), device=states.device, dtype=out_dtype)
     final_states = torch.empty((batch, nheads, dim), device=states.device, dtype=torch.float32)
     grid = lambda META: (triton.cdiv(dim, META['BLOCK_SIZE']), batch, nheads)
     with torch.cuda.device(states.device.index):
         _state_passing_fwd_kernel[grid](
-            states, out, final_states, dA_chunk_cumsum, initial_states, seq_idx,
-            dim, nchunks, seqlen if seq_idx is not None else 0, chunk_size if seq_idx is not None else 0,
+            states, out, final_states, dA_chunk_cumsum,
+            dim, nchunks, 0, 0,
             states.stride(0), states.stride(1), states.stride(2), states.stride(3),
             out.stride(0), out.stride(1), out.stride(2), out.stride(3),
             final_states.stride(0), final_states.stride(1), final_states.stride(2),
             dA_chunk_cumsum.stride(0), dA_chunk_cumsum.stride(2), dA_chunk_cumsum.stride(1),
-            *((initial_states.stride(0), initial_states.stride(1), initial_states.stride(2))
-              if initial_states is not None else (0, 0, 0)),
-            *((seq_idx.stride(0), seq_idx.stride(1)) if seq_idx is not None else (0, 0)),
-            HAS_INITSTATES=initial_states is not None,
-            HAS_SEQ_IDX=seq_idx is not None,
+            REVERSE=reverse,
         )
     return out, final_states
 

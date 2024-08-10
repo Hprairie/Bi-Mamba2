@@ -60,11 +60,9 @@ def _chunk_scan_fwd_kernel(
     stride_states_b_batch, stride_states_b_chunk, stride_states_b_head, stride_states_b_hdim, stride_states_b_dstate,
     stride_D_head,
     # Meta-parameters
-    IS_CAUSAL: tl.constexpr,
     HAS_D: tl.constexpr,
     D_HAS_HDIM: tl.constexpr,
     HAS_Z: tl.constexpr,
-    HAS_SEQ_IDX: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
     BLOCK_SIZE_DSTATE: tl.constexpr,
     IS_TRITON_22: tl.constexpr,
@@ -1237,7 +1235,7 @@ def _chunk_scan_bwd_ddAcs_prev_kernel(
     tl.atomic_add(ddA_cumsum_ptrs, ddA_cs, mask=offs_m < chunk_size)
 
 
-def _chunk_scan_fwd(cb, x, dt, dA_cumsum, C, states, D=None, z=None, seq_idx=None):
+def _chunk_scan_fwd(cb, x, dt, dA_cumsum_f, dA_cumsum_b, C, states_f, states_b, D=None, z=None):
     batch, seqlen, nheads, headdim = x.shape
     _, _, nchunks, chunk_size = dt.shape
     _, _, ngroups, dstate = C.shape
@@ -1249,10 +1247,10 @@ def _chunk_scan_fwd(cb, x, dt, dA_cumsum, C, states, D=None, z=None, seq_idx=Non
     if D is not None:
         assert D.shape == (nheads, headdim) or D.shape == (nheads,)
     assert dt.shape == (batch, nheads, nchunks, chunk_size)
-    assert dA_cumsum.shape == (batch, nheads, nchunks, chunk_size)
-    assert states.shape == (batch, nchunks, nheads, headdim, dstate)
-    if seq_idx is not None:
-        assert seq_idx.shape == (batch, seqlen)
+    assert dA_cumsum_f.shape == (batch, nheads, nchunks, chunk_size)
+    assert states_f.shape == (batch, nchunks, nheads, headdim, dstate)
+    assert dA_cumsum_b.shape == (batch, nheads, nchunks, chunk_size)
+    assert states_b.shape == (batch, nchunks, nheads, headdim, dstate)
     # Allocates output.
     out = torch.empty(batch, seqlen, nheads, headdim, device=x.device, dtype=x.dtype)
     if z is not None:
@@ -1265,7 +1263,7 @@ def _chunk_scan_fwd(cb, x, dt, dA_cumsum, C, states, D=None, z=None, seq_idx=Non
     z_strides = ((z.stride(0), z.stride(1), z.stride(2), z.stride(3))
                   if z is not None else (0, 0, 0, 0))
     _chunk_scan_fwd_kernel[grid](
-        cb, x, z, out, out_x, dt, dA_cumsum, seq_idx, C, states, D,
+        cb, x, z, out, out_x, dt, dA_cumsum_f, dA_cumsum_b, C, states_f, states_b, D,
         chunk_size, headdim, dstate,
         batch, seqlen, nheads // ngroups,
         cb.stride(0), cb.stride(1), cb.stride(2), cb.stride(3), cb.stride(4),
@@ -1273,17 +1271,16 @@ def _chunk_scan_fwd(cb, x, dt, dA_cumsum, C, states, D=None, z=None, seq_idx=Non
         z_strides[0], z_strides[1], z_strides[2], z_strides[3],
         out.stride(0), out.stride(1), out.stride(2), out.stride(3),
         dt.stride(0), dt.stride(2), dt.stride(1), dt.stride(3),
-        dA_cumsum.stride(0), dA_cumsum.stride(2), dA_cumsum.stride(1), dA_cumsum.stride(3),
-        *((seq_idx.stride(0), seq_idx.stride(1)) if seq_idx is not None else (0, 0)),
+        dA_cumsum_f.stride(0), dA_cumsum_f.stride(2), dA_cumsum_f.stride(1), dA_cumsum_f.stride(3),
+        dA_cumsum_b.stride(0), dA_cumsum_b.stride(2), dA_cumsum_b.stride(1), dA_cumsum_b.stride(3),
         C.stride(0), C.stride(1), C.stride(2), C.stride(3),
-        states.stride(0), states.stride(1), states.stride(2), states.stride(3), states.stride(4),
+        states_f.stride(0), states_f.stride(1), states_f.stride(2), states_f.stride(3), states_f.stride(4),
+        states_b.stride(0), states_b.stride(1), states_b.stride(2), states_b.stride(3), states_b.stride(4),
         D.stride(0) if D is not None else 0,
-        True,
         D is not None,
         D.dim() == 2 if D is not None else True,
         BLOCK_SIZE_DSTATE=max(triton.next_power_of_2(dstate), 16),
         HAS_Z=z is not None,
-        HAS_SEQ_IDX=seq_idx is not None,
         IS_TRITON_22=TRITON_22,
     )
     return out, out_x

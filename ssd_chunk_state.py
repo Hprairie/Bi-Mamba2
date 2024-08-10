@@ -675,23 +675,25 @@ def _chunk_cumsum_fwd(dt, A, chunk_size, dt_bias=None, dt_softplus=False, dt_lim
         assert dt_bias.shape == (nheads,)
     nchunks = math.ceil(seqlen / chunk_size)
     dt_out = torch.empty(batch, nheads, nchunks, chunk_size, device=dt.device, dtype=torch.float32)
-    dA_cumsum = torch.empty(batch, nheads, nchunks, chunk_size, device=dt.device, dtype=torch.float32)
+    dA_f_cumsum = torch.empty(batch, nheads, nchunks, chunk_size, device=dt.device, dtype=torch.float32)
+    dA_b_cumsum = torch.empty(batch, nheads, nchunks, chunk_size, device=dt.device, dtype=torch.float32)
     grid_chunk_cs = lambda META: (batch, nchunks, triton.cdiv(nheads, META['BLOCK_SIZE_H']))
     with torch.cuda.device(dt.device.index):
         _chunk_cumsum_fwd_kernel[grid_chunk_cs](
-            dt, A, dt_bias, dt_out, dA_cumsum,
+            dt, A, dt_bias, dt_out, dA_f_cumsum, dA_b_cumsum,
             batch, seqlen, nheads, chunk_size,
             dt_limit[0], dt_limit[1],
             dt.stride(0), dt.stride(1), dt.stride(2),
             A.stride(0),
             dt_bias.stride(0) if dt_bias is not None else 0,
             dt_out.stride(0), dt_out.stride(2), dt_out.stride(1), dt_out.stride(3),
-            dA_cumsum.stride(0), dA_cumsum.stride(2), dA_cumsum.stride(1), dA_cumsum.stride(3),
+            dA_f_cumsum.stride(0), dA_f_cumsum.stride(2), dA_f_cumsum.stride(1), dA_f_cumsum.stride(3),
+            dA_b_cumsum.stride(0), dA_b_cumsum.stride(2), dA_b_cumsum.stride(1), dA_b_cumsum.stride(3),
             dt_softplus,
             HAS_DT_BIAS=dt_bias is not None,
             BLOCK_SIZE_CHUNK=triton.next_power_of_2(chunk_size),
         )
-    return dA_cumsum, dt_out
+    return dA_f_cumsum, dA_b_cumsum, dt_out
 
 
 def _chunk_cumsum_bwd(ddA, ddt_out, dt, A, dt_bias=None, dt_softplus=False, dt_limit=(0.0, float("inf")), ddt=None):
@@ -731,37 +733,41 @@ def _chunk_cumsum_bwd(ddA, ddt_out, dt, A, dt_bias=None, dt_softplus=False, dt_l
     return ddt, dA, ddt_bias
 
 
-def _chunk_state_fwd(B, x, dt, dA_cumsum, seq_idx=None, states=None, states_in_fp32=True):
+def _chunk_state_fwd(B, x, dt, dA_cumsum_f, dA_cumsum_b, states_f=None, states_b=None, states_in_fp32=True):
     batch, seqlen, nheads, headdim = x.shape
     _, _, nchunks, chunk_size = dt.shape
     _, _, ngroups, dstate = B.shape
     assert nheads % ngroups == 0
     assert B.shape == (batch, seqlen, ngroups, dstate)
     assert dt.shape == (batch, nheads, nchunks, chunk_size)
-    assert dA_cumsum.shape == dt.shape
-    if seq_idx is not None:
-        assert seq_idx.shape == (batch, seqlen)
-    if states is not None:
-        assert states.shape == (batch, nchunks, nheads, headdim, dstate)
+    assert dA_cumsum_f.shape == dt.shape
+    assert dA_cumsum_b.shape == dt.shape
+    if states_f is not None:
+        assert states_f.shape == (batch, nchunks, nheads, headdim, dstate)
     else:
         states_dtype = torch.float32 if states_in_fp32 else B.dtype
-        states = torch.empty((batch, nchunks, nheads, headdim, dstate), device=x.device, dtype=states_dtype)
+        states_f = torch.empty((batch, nchunks, nheads, headdim, dstate), device=x.device, dtype=states_dtype)
+    if states_b is not None:
+        assert states_b.shape == (batch, nchunks, nheads, headdim, dstate)
+    else:
+        states_dtype = torch.float32 if states_in_fp32 else B.dtype
+        states_b = torch.empty((batch, nchunks, nheads, headdim, dstate), device=x.device, dtype=states_dtype)
     grid = lambda META: (triton.cdiv(headdim, META['BLOCK_SIZE_M']) * triton.cdiv(dstate, META['BLOCK_SIZE_N']),
                     batch * nchunks, nheads)
     with torch.cuda.device(x.device.index):
         _chunk_state_fwd_kernel[grid](
-            x, B, states, dt, dA_cumsum, seq_idx,
+            x, B, states_f, states_b, dt, dA_cumsum_f, dA_cumsum_b, 
             headdim, dstate, chunk_size,
             batch, seqlen, nheads // ngroups,
             x.stride(0), x.stride(1), x.stride(2), x.stride(3),
             B.stride(0), B.stride(1), B.stride(2), B.stride(-1),
-            states.stride(0), states.stride(1), states.stride(2), states.stride(3), states.stride(4),
+            states_f.stride(0), states_f.stride(1), states_f.stride(2), states_f.stride(3), states_f.stride(4),
+            states_b.stride(0), states_b.stride(1), states_b.stride(2), states_b.stride(3), states_b.stride(4),
             dt.stride(0), dt.stride(2), dt.stride(1), dt.stride(3),
-            dA_cumsum.stride(0), dA_cumsum.stride(2), dA_cumsum.stride(1), dA_cumsum.stride(3),
-            *((seq_idx.stride(0), seq_idx.stride(1)) if seq_idx is not None else (0, 0)),
-            HAS_SEQ_IDX=seq_idx is not None,
+            dA_cumsum_f.stride(0), dA_cumsum_f.stride(2), dA_cumsum_f.stride(1), dA_cumsum_f.stride(3),
+            dA_cumsum_b.stride(0), dA_cumsum_b.stride(2), dA_cumsum_b.stride(1), dA_cumsum_b.stride(3),
         )
-    return states
+    return states_f, states_b
 
 
 def _chunk_state_bwd_dx(B, x, dt, dA_cumsum, dstates, dx=None):
