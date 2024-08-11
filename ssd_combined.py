@@ -273,7 +273,7 @@ def _chunk_scan_chunk_state_bwd_dx(x, dt, dA_cumsum, B, CB, dout, dstates, D=Non
     return dx, ddt.to(dtype=dt.dtype), dD
 
 
-def _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=None, z=None, dt_bias=None, initial_states=None, seq_idx=None, cu_seqlens=None, dt_softplus=False, dt_limit=(0.0, float("inf"))):
+def _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=None, z=None, dt_bias=None, dt_softplus=False, dt_limit=(0.0, float("inf"))):
     batch, seqlen, nheads, headdim = x.shape
     _, _, ngroups, dstate = B.shape
     assert nheads % ngroups == 0
@@ -286,8 +286,6 @@ def _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=None, z=None, d
         assert z.shape == x.shape
     if D is not None:
         assert D.shape == (nheads, headdim) or D.shape == (nheads,)
-    if seq_idx is not None:
-        assert seq_idx.shape == (batch, seqlen)
     if B.stride(-1) != 1:
         B = B.contiguous()
     if C.stride(-1) != 1:
@@ -298,32 +296,17 @@ def _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=None, z=None, d
         z = z.contiguous()
     if D is not None and D.stride(-1) != 1:
         D = D.contiguous()
-    if initial_states is not None:
-        assert initial_states.shape == (batch, nheads, headdim, dstate)
     # # (batch, nchunks, chunk_size, chunk_size) or (batch, nchunks, nheads, chunk_size, chunk_size)
-    # dA_cumsum_tmp0, dt_tmp0 = _chunk_cumsum_fwd(dt[:, :147], A, chunk_size, dt_bias=dt_bias, dt_softplus=dt_softplus)
-    # dA_cumsum_tmp1, dt_tmp1 = _chunk_cumsum_fwd(dt[:, 147:], A, chunk_size, dt_bias=dt_bias, dt_softplus=dt_softplus)
-    # dA_cumsum_tmp2, dt_tmp2 = _chunk_cumsum_fwd(dt[:, 147:256], A, chunk_size, dt_bias=dt_bias, dt_softplus=dt_softplus)
-    dA_cumsum, dt = _chunk_cumsum_fwd(dt, A, chunk_size, dt_bias=dt_bias, dt_softplus=dt_softplus, dt_limit=dt_limit)
-    states = _chunk_state_fwd(B, x, dt, dA_cumsum, seq_idx=seq_idx, states_in_fp32=True)
-    # states_tmp0 = _chunk_state_fwd(B[:, :147], x[:, :147], dt_tmp0, dA_cumsum_tmp0, states_in_fp32=True)
-    # states_tmp1 = _chunk_state_fwd(B[:, 147:], x[:, 147:], dt_tmp1, dA_cumsum_tmp1, states_in_fp32=True)
-    # states_tmp2 = _chunk_state_fwd(B[:, 147:256], x[:, 147:256], dt_tmp2, dA_cumsum_tmp2, states_in_fp32=True)
-    states, final_states = _state_passing_fwd(rearrange(states, "... p n -> ... (p n)"), dA_cumsum[:, :, :, -1],
-                                              initial_states=rearrange(initial_states, "... p n -> ... (p n)") if initial_states is not None else None,
-                                              seq_idx=seq_idx, chunk_size=chunk_size, out_dtype=C.dtype)
-    states, final_states = [rearrange(t, "... (p n) -> ... p n", n=dstate) for t in [states, final_states]]
-    # states_tmp0 = rearrange(_state_passing_fwd(rearrange(states_tmp0, "... p n -> ... (p n)"), dA_cumsum_tmp0[:, :, :, -1], chunk_size=chunk_size), "... (p n) -> ... p n", n=dstate)
-    # states_tmp1 = rearrange(_state_passing_fwd(rearrange(states_tmp1, "... p n -> ... (p n)"), dA_cumsum_tmp1[:, :, :, -1], chunk_size=chunk_size), "... (p n) -> ... p n", n=dstate)
-    CB = _bmm_chunk_fwd(C, B, chunk_size, seq_idx=seq_idx, output_dtype=torch.float32)
-    out, out_x = _chunk_scan_fwd(CB, x, dt, dA_cumsum, C, states, D=D, z=z, seq_idx=seq_idx)
-    if cu_seqlens is None:
-        return out, out_x, dt, dA_cumsum, states, final_states
-    else:
-        assert batch == 1, "passing cu_seqlens to get the varlen states is only supported if batch dimension is 1"
-        varlen_states = chunk_state_varlen(B.squeeze(0), x.squeeze(0), dt.squeeze(0), dA_cumsum.squeeze(0),
-                                           cu_seqlens, states.squeeze(0))
-        return out, out_x, dt, dA_cumsum, states, final_states, varlen_states
+    dA_cumsum_f, dA_cumsum_b, dt = _chunk_cumsum_fwd(dt, A, chunk_size, dt_bias=dt_bias, dt_softplus=dt_softplus, dt_limit=dt_limit)
+    states_f, states_b = _chunk_state_fwd(B, x, dt, dA_cumsum_f, dA_cumsum_b, states_in_fp32=True)
+    states_f, final_states_f = _state_passing_fwd(rearrange(states_f, "... p n -> ... (p n)"), dA_cumsum_f[:, :, :, -1],
+                                              chunk_size=chunk_size, out_dtype=C.dtype)
+    states_b, final_states_b = _state_passing_fwd(rearrange(states_b, "... p n -> ... (p n)"), dA_cumsum_b[:, :, :, -1],
+                                              chunk_size=chunk_size, out_dtype=C.dtype, reverse=True)
+    states_f, states_b, final_states_f, final_states_b = [rearrange(t, "... (p n) -> ... p n", n=dstate) for t in [states_f, states_b, final_states_f, final_states_b]]
+    CB = _bmm_chunk_fwd(C, B, chunk_size, output_dtype=torch.float32)
+    out, out_x = _chunk_scan_fwd(CB, x, dt, dA_cumsum_f, dA_cumsum_b, C, states_f, states_b, D=D, z=z)
+    return out, out_x, dt, dA_cumsum_f, dA_cumsum_b, states_f, states_b, final_states_f, final_states_b
 
 
 def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None, z=None,
