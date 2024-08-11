@@ -282,6 +282,7 @@ def _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=None, z=None, d
     assert dt.shape == (batch, seqlen, nheads)
     assert A.shape == (nheads,)
     assert C.shape == B.shape
+    assert chunk_size >= 32, "Triton Reverse is bugged with < 32 cumsums when running a reverse scan, please use 32 >= chunk length until fixed"
     if z is not None:
         assert z.shape == x.shape
     if D is not None:
@@ -301,7 +302,7 @@ def _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=None, z=None, d
     states_f, states_b = _chunk_state_fwd(B, x, dt, dA_cumsum_f, dA_cumsum_b, states_in_fp32=True)
     states_f, final_states_f = _state_passing_fwd(rearrange(states_f, "... p n -> ... (p n)"), dA_cumsum_f[:, :, :, -1],
                                               chunk_size=chunk_size, out_dtype=C.dtype)
-    states_b, final_states_b = _state_passing_fwd(rearrange(states_b, "... p n -> ... (p n)"), dA_cumsum_b[:, :, :, -1],
+    states_b, final_states_b = _state_passing_fwd(rearrange(states_b, "... p n -> ... (p n)"), dA_cumsum_b[:, :, :, 0],
                                               chunk_size=chunk_size, out_dtype=C.dtype, reverse=True)
     states_f, states_b, final_states_f, final_states_b = [rearrange(t, "... (p n) -> ... p n", n=dstate) for t in [states_f, states_b, final_states_f, final_states_b]]
     CB = _bmm_chunk_fwd(C, B, chunk_size, output_dtype=torch.float32)
@@ -310,7 +311,7 @@ def _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=None, z=None, d
 
 
 def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None, z=None,
-                                   dt_bias=None, initial_states=None, dfinal_states=None, seq_idx=None, dt_softplus=False,
+                                   dt_bias=None, dfinal_states=None, dt_softplus=False,
                                    dt_limit=(0.0, float("inf")),
                                    dx=None, ddt=None, dB=None, dC=None, dz=None, recompute_output=False):
     if dout.stride(-1) != 1:
@@ -325,10 +326,6 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     assert B.shape == (batch, seqlen, ngroups, dstate)
     assert C.shape == B.shape
     assert out.shape == x.shape
-    if initial_states is not None:
-        assert initial_states.shape == (batch, nheads, headdim, dstate)
-    if seq_idx is not None:
-        assert seq_idx.shape == (batch, seqlen)
     if dx is not None:
         assert dx.shape == x.shape
     if dB is not None:
@@ -352,14 +349,14 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     # TD: For some reason Triton (2.1.0 and 2.2.0) errors with
     # "[CUDA]: invalid device context" (e.g. during varlne test), and cloning makes it work. Idk why.
     dt_in = dt.clone()
-    dA_cumsum, dt = _chunk_cumsum_fwd(dt_in, A, chunk_size, dt_bias=dt_bias, dt_softplus=dt_softplus,
+    dA_cumsum_f, dA_cumsum_b, dt = _chunk_cumsum_fwd(dt_in, A, chunk_size, dt_bias=dt_bias, dt_softplus=dt_softplus,
                                       dt_limit=dt_limit)
-    CB = _bmm_chunk_fwd(C, B, chunk_size, seq_idx=seq_idx, output_dtype=torch.float32)
-    states = _chunk_state_fwd(B, x, dt, dA_cumsum, seq_idx=seq_idx, states_in_fp32=True)
-    states, _ = _state_passing_fwd(rearrange(states, "... p n -> ... (p n)"), dA_cumsum[:, :, :, -1],
-                                   initial_states=rearrange(initial_states, "... p n -> ... (p n)") if initial_states is not None else None,
-                                   seq_idx=seq_idx, chunk_size=chunk_size)
-    states = rearrange(states, "... (p n) -> ... p n", n=dstate)
+    CB = _bmm_chunk_fwd(C, B, chunk_size, output_dtype=torch.float32)
+    states_f, states_b = _chunk_state_fwd(B, x, dt, dA_cumsum_f, dA_cumsum_b, states_in_fp32=True)
+    states_f, _ = _state_passing_fwd(rearrange(states_f, "... p n -> ... (p n)"), dA_cumsum_f[:, :, :, -1], chunk_size=chunk_size)
+    states_b, _ = _state_passing_fwd(rearrange(states_b, "... p n -> ... (p n)"), dA_cumsum_b[:, :, :, 0], chunk_size=chunk_size)
+    states_f = rearrange(states_f, "... (p n) -> ... p n", n=dstate)
+    states_b = rearrange(states_b, "... (p n) -> ... p n", n=dstate)
     if z is not None:
         dz, dout, dD, *rest = _chunk_scan_bwd_dz(x, z, out, dout, chunk_size=chunk_size, has_ddAcs=False, D=D, dz=dz, recompute_output=recompute_output)
         outz = rest[0] if recompute_output else out
