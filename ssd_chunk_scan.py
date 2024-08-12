@@ -449,18 +449,18 @@ def _chunk_scan_bwd_dz_kernel(
 @triton.jit
 def _chunk_scan_bwd_dstates_kernel(
     # Pointers to matrices
-    dout_ptr, c_ptr, dprev_states_ptr, dA_cumsum_ptr, seq_idx_ptr,
+    dout_ptr, c_ptr, dprev_states_f_ptr, dprev_states_b_ptr, dA_cumsum_f_ptr, dA_cumsum_b_ptr, # dA is not a gradient but delta A
     # Matrix dimensions
     hdim, dstate, chunk_size,
     batch, seqlen, nchunks, nheads_ngroups_ratio,
     # Strides
     stride_dout_batch, stride_dout_seqlen, stride_dout_head, stride_dout_hdim,
     stride_c_batch, stride_c_seqlen, stride_c_head, stride_c_dstate,
-    stride_dprev_states_batch, stride_dprev_states_chunk, stride_dprev_states_head, stride_dprev_states_hdim, stride_dprev_states_dstate,
-    stride_dA_cs_batch, stride_dA_cs_chunk, stride_dA_cs_head, stride_dA_cs_csize,
-    stride_seq_idx_batch, stride_seq_idx_seqlen,
+    stride_dprev_states_f_batch, stride_dprev_states_f_chunk, stride_dprev_states_f_head, stride_dprev_states_f_hdim, stride_dprev_states_f_dstate,
+    stride_dprev_states_b_batch, stride_dprev_states_b_chunk, stride_dprev_states_b_head, stride_dprev_states_b_hdim, stride_dprev_states_b_dstate,
+    stride_dA_cs_f_batch, stride_dA_cs_f_chunk, stride_dA_cs_f_head, stride_dA_cs_f_csize,
+    stride_dA_cs_b_batch, stride_dA_cs_b_chunk, stride_dA_cs_b_head, stride_dA_cs_b_csize,
     # Meta-parameters
-    HAS_SEQ_IDX: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
 ):
     pid_bc = tl.program_id(axis=1)
@@ -472,46 +472,46 @@ def _chunk_scan_bwd_dstates_kernel(
     pid_n = tl.program_id(axis=0) % num_pid_n
     c_ptr += pid_b * stride_c_batch + pid_c * chunk_size * stride_c_seqlen + (pid_h // nheads_ngroups_ratio) * stride_c_head
     dout_ptr += pid_b * stride_dout_batch + pid_c * chunk_size * stride_dout_seqlen + pid_h * stride_dout_head
-    dA_cumsum_ptr += pid_b * stride_dA_cs_batch + pid_c * stride_dA_cs_chunk + pid_h * stride_dA_cs_head
-    if HAS_SEQ_IDX:
-        seq_idx_ptr += pid_b * stride_seq_idx_batch + pid_c * chunk_size * stride_seq_idx_seqlen
+    dA_cumsum_f_ptr += pid_b * stride_dA_cs_f_batch + pid_c * stride_dA_cs_f_chunk + pid_h * stride_dA_cs_f_head
+    dA_cumsum_b_ptr += pid_b * stride_dA_cs_b_batch + pid_c * stride_dA_cs_b_chunk + pid_h * stride_dA_cs_b_head
 
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     offs_k = tl.arange(0, BLOCK_SIZE_K)
     dout_ptrs = dout_ptr + (offs_m[:, None] * stride_dout_hdim + offs_k[None, :] * stride_dout_seqlen)
     c_ptrs = c_ptr + (offs_n[None, :] * stride_c_dstate + offs_k[:, None] * stride_c_seqlen)
-    dA_cumsum_ptrs = dA_cumsum_ptr + offs_k * stride_dA_cs_csize
-    if HAS_SEQ_IDX:
-        seq_idx_ptrs = seq_idx_ptr + offs_k * stride_seq_idx_seqlen
+    dA_cumsum_f_ptrs = dA_cumsum_f_ptr + offs_k * stride_dA_cs_f_csize
+    dA_cumsum_b_ptrs = dA_cumsum_b_ptr + offs_k * stride_dA_cs_b_csize
 
     chunk_size_limit = min(chunk_size, seqlen - pid_c * chunk_size)
-    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-    if HAS_SEQ_IDX:
-        seq_idx_prev = tl.load(seq_idx_ptr - stride_seq_idx_seqlen, mask=pid_c >= 1, other=0)
+    acc_f = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+    acc_b = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     for k in range(0, chunk_size_limit, BLOCK_SIZE_K):
         dout = tl.load(dout_ptrs, mask=(offs_m[:, None] < hdim) & (offs_k[None, :] < chunk_size_limit - k), other=0.0).to(tl.float32)
-        dA_cs_k = tl.load(dA_cumsum_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
-        if not HAS_SEQ_IDX:
-            scale_k = tl.exp(dA_cs_k)
-        else:
-            seq_idx_k = tl.load(seq_idx_ptrs, mask=offs_k < chunk_size_limit - k, other=-1)
-            scale_k = tl.where(seq_idx_k == seq_idx_prev, tl.exp(dA_cs_k), 0.0)
-        dout = (dout * scale_k).to(dout_ptr.dtype.element_ty)
+        dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
+        dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
+        scale_f_k = tl.exp(dA_cs_f_k)
+        scale_b_k = tl.exp(dA_cs_b_k)
+        dout_f = (dout * scale_f_k).to(dout_ptr.dtype.element_ty)
+        dout_b = (dout * scale_b_k).to(dout_ptr.dtype.element_ty)
         c = tl.load(c_ptrs, mask=(offs_k[:, None] < chunk_size_limit - k) & (offs_n[None, :] < dstate), other=0.0)
-        acc += tl.dot(dout, c)
+        acc_f += tl.dot(dout_f, c)
+        acc_b += tl.dot(dout_b, c)
         dout_ptrs += BLOCK_SIZE_K * stride_dout_seqlen
         c_ptrs += BLOCK_SIZE_K * stride_c_seqlen
-        dA_cumsum_ptrs += BLOCK_SIZE_K * stride_dA_cs_csize
-        if HAS_SEQ_IDX:
-            seq_idx_ptrs += BLOCK_SIZE_K * stride_seq_idx_seqlen
-    out = acc.to(dprev_states_ptr.dtype.element_ty)
+        dA_cumsum_f_ptrs += BLOCK_SIZE_K * stride_dA_cs_f_csize
+        dA_cumsum_b_ptrs += BLOCK_SIZE_K * stride_dA_cs_b_csize
+    out_f = acc_f.to(dprev_states_f_ptr.dtype.element_ty)
+    out_b = acc_b.to(dprev_states_b_ptr.dtype.element_ty)
 
-    dprev_states_ptr += pid_b * stride_dprev_states_batch + pid_c * stride_dprev_states_chunk + pid_h * stride_dprev_states_head
+    dprev_states_f_ptr += pid_b * stride_dprev_states_f_batch + pid_c * stride_dprev_states_f_chunk + pid_h * stride_dprev_states_f_head
+    dprev_states_b_ptr += pid_b * stride_dprev_states_b_batch + pid_c * stride_dprev_states_b_chunk + pid_h * stride_dprev_states_b_head
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
-    dprev_states_ptrs = dprev_states_ptr + (offs_m[:, None] * stride_dprev_states_hdim + offs_n[None, :] * stride_dprev_states_dstate)
-    tl.store(dprev_states_ptrs, out, mask=(offs_m[:, None] < hdim) & (offs_n[None, :] < dstate))
+    dprev_states_f_ptrs = dprev_states_f_ptr + (offs_m[:, None] * stride_dprev_states_f_hdim + offs_n[None, :] * stride_dprev_states_f_dstate)
+    dprev_states_b_ptrs = dprev_states_b_ptr + (offs_m[:, None] * stride_dprev_states_b_hdim + offs_n[None, :] * stride_dprev_states_b_dstate)
+    tl.store(dprev_states_f_ptrs, out_f, mask=(offs_m[:, None] < hdim) & (offs_n[None, :] < dstate))
+    tl.soter(dprev_states_b_ptrs, out_b, mask=(offs_m[:, None] < hdim) & (offs_n[None, :] < dstate))
 
 
 @triton.autotune(
@@ -1398,32 +1398,32 @@ def _chunk_scan_bwd_dz(x, z, out, dout, chunk_size, has_ddAcs=True, D=None, dz=N
     return return_vals if not recompute_output else (*return_vals, outz)
 
 
-def _chunk_scan_bwd_dstates(C, dA_cumsum, dout, seq_idx=None, dtype=None):
+def _chunk_scan_bwd_dstates(C, dA_cumsum_f, dA_cumsum_b, dout, dtype=None):
     batch, seqlen, nheads, headdim = dout.shape
-    _, _, nchunks, chunk_size = dA_cumsum.shape
+    _, _, nchunks, chunk_size = dA_cumsum_f.shape
     _, _, ngroups, dstate = C.shape
     assert nheads % ngroups == 0
     assert C.shape == (batch, seqlen, ngroups, dstate)
-    assert dA_cumsum.shape == (batch, nheads, nchunks, chunk_size)
-    if seq_idx is not None:
-        assert seq_idx.shape == (batch, seqlen)
+    assert dA_cumsum_f.shape == (batch, nheads, nchunks, chunk_size)
+    assert dA_cumsum_b.shape == (batch, nheads, nchunks, chunk_size)
     dtype = C.dtype if dtype is None else dtype
-    dprev_states = torch.empty(batch, nchunks, nheads, headdim, dstate, device=C.device, dtype=dtype)
+    dprev_states_f = torch.empty(batch, nchunks, nheads, headdim, dstate, device=C.device, dtype=dtype)
+    dprev_states_b = torch.empty(batch, nchunks, nheads, headdim, dstate, device=C.device, dtype=dtype)
     grid_dstates = lambda META: (triton.cdiv(headdim, META['BLOCK_SIZE_M']) * triton.cdiv(dstate, META['BLOCK_SIZE_N']),
                             batch * nchunks, nheads)
     with torch.cuda.device(C.device.index):
         _chunk_scan_bwd_dstates_kernel[grid_dstates](
-            dout, C, dprev_states, dA_cumsum, seq_idx,
+            dout, C, dprev_states_f, dprev_states_b, dA_cumsum_f, dA_cumsum_b,
             headdim, dstate, chunk_size,
             batch, seqlen, nchunks, nheads // ngroups,
             dout.stride(0), dout.stride(1), dout.stride(2), dout.stride(3),
             C.stride(0), C.stride(1), C.stride(2), C.stride(3),
-            dprev_states.stride(0), dprev_states.stride(1), dprev_states.stride(2), dprev_states.stride(3), dprev_states.stride(4),
-            dA_cumsum.stride(0), dA_cumsum.stride(2), dA_cumsum.stride(1), dA_cumsum.stride(3),
-            *((seq_idx.stride(0), seq_idx.stride(1)) if seq_idx is not None else (0, 0)),
-            HAS_SEQ_IDX=seq_idx is not None,
+            dprev_states_f.stride(0), dprev_states_f.stride(1), dprev_states_f.stride(2), dprev_states_f.stride(3), dprev_states_f.stride(4),
+            dprev_states_b.stride(0), dprev_states_b.stride(1), dprev_states_b.stride(2), dprev_states_b.stride(3), dprev_states_b.stride(4),
+            dA_cumsum_f.stride(0), dA_cumsum_f.stride(2), dA_cumsum_f.stride(1), dA_cumsum_f.stride(3),
+            dA_cumsum_b.stride(0), dA_cumsum_b.stride(2), dA_cumsum_b.stride(1), dA_cumsum_b.stride(3),
         )
-    return dprev_states
+    return dprev_states_f, dprev_states_b
 
 
 def _chunk_scan_bwd_dC(prev_states, dA_cumsum, dout, seq_idx=None, C=None, ngroups=1):

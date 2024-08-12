@@ -363,18 +363,23 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     else:
         dz = None
         outz = out
-    dstates = _chunk_scan_bwd_dstates(C, dA_cumsum, dout, seq_idx=seq_idx, dtype=states.dtype)
+    dstates_f, dstates_b = _chunk_scan_bwd_dstates(C, dA_cumsum_f, dA_cumsum_b, dout, dtype=states_f.dtype)
     # dstates has length nchunks, containing the gradient to initial states at index 0 and
     # gradient to the states of chunk (nchunks - 2) at index (nchunks - 1)
     # Do computation in fp32 but convert dstates and states to fp16/bf16 since dstates and states
     # will be used in matmul in the next kernels.
-    dstates, ddA_chunk_cumsum, dinitial_states, states = _state_passing_bwd(
-        rearrange(states, "... p n -> ... (p n)"),
-        dA_cumsum[:, :, :, -1],
-        rearrange(dstates, "... p n -> ... (p n)"),
-        dfinal_states=rearrange(dfinal_states, "... p n -> ... (p n)") if dfinal_states is not None else None,
-        seq_idx=seq_idx,
-        has_initial_states=initial_states is not None,
+    dstates_f, ddA_chunk_cumsum_f, states_f = _state_passing_bwd(
+        rearrange(states_f, "... p n -> ... (p n)"),
+        dA_cumsum_f[:, :, :, -1],
+        rearrange(dstates_f, "... p n -> ... (p n)"),
+        dstates_dtype=x.dtype,
+        states_dtype=x.dtype,
+        chunk_size=chunk_size,
+    )
+    dstates_b, ddA_chunk_cumsum_b, states_b = _state_passing_bwd(
+        rearrange(states_b, "... p n -> ... (p n)"),
+        dA_cumsum_b[:, :, :, 0],
+        rearrange(dstates_b, "... p n -> ... (p n)"),
         dstates_dtype=x.dtype,
         states_dtype=x.dtype,
         chunk_size=chunk_size,
@@ -383,9 +388,11 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     # gradient to the final states at index (nchunks - 1)
     # states has length nchunks, containing the initial states at index 0 and the state for chunk (nchunks - 2) at index (nchunks - 1)
     # The final states is not stored.
-    states = rearrange(states, "... (p n) -> ... p n", n=dstate)
-    dstates = rearrange(dstates, "... (p n) -> ... p n", n=dstate)
-    dinitial_states = rearrange(dinitial_states, "... (p n) -> ... p n", n=dstate) if dinitial_states is not None else None
+    states_f = rearrange(states_f, "... (p n) -> ... p n", n=dstate)
+    dstates_f = rearrange(dstates_f, "... (p n) -> ... p n", n=dstate)
+    states_b = rearrange(states_b, "... (p n) -> ... p n", n=dstate)
+    dstates_b = rearrange(dstates_b, "... (p n) -> ... p n", n=dstate)
+
     dx, ddt, dD_from_x = _chunk_scan_chunk_state_bwd_dx(x, dt, dA_cumsum, B, CB, dout, dstates, D=D, seq_idx=seq_idx, dx=dx)
     # dB = _chunk_state_bwd_db(x, dt, dA_cumsum, dstates, seq_idx=seq_idx, ngroups=ngroups)
     dB, ddA_next = _chunk_state_bwd_db(x, dt, dA_cumsum, dstates, seq_idx=seq_idx, B=B, ngroups=ngroups)
