@@ -13,7 +13,7 @@ import triton.language as tl
 
 from einops import rearrange, repeat
 
-from softplus import softplus
+from ssd.bi.softplus import softplus
 
 
 def init_to_zero(names):
@@ -81,7 +81,9 @@ def _chunk_cumsum_fwd_kernel(
     A = tl.load(A_ptrs, mask=offs_h < nheads, other=0.0).to(tl.float32)
     dA = dt * A[:, None]
     dA_cs_f = tl.cumsum(dA, axis=1)
-    dA_cs_b = tl.cumsum(dA, axis=1, reverse=True)
+    dA_cs_b = tl.flip(tl.cumsum(tl.flip(dA, dim=1), axis=1))
+    # dA_cs_b = tl.cumsum(dA, axis=1, reverse=True)
+    tl.device_print("WHY", dA_cs_b)
     tl.store(dA_cs_f_ptrs, dA_cs_f, mask=(offs_h[:, None] < nheads) & (offs_c[None, :] < chunk_size))
     tl.store(dA_cs_b_ptrs, dA_cs_b, mask=(offs_h[:, None] < nheads) & (offs_c[None, :] < chunk_size))
 

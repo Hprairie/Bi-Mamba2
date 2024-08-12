@@ -19,21 +19,21 @@ import triton.language as tl
 from einops import rearrange, repeat
 
 
-from ssd_bmm import _bmm_chunk_fwd, _bmm_chunk_bwd
-from ssd_chunk_state import _chunk_cumsum_fwd, _chunk_cumsum_bwd
-from ssd_chunk_state import _chunk_state_fwd, _chunk_state_bwd_db
-from ssd_chunk_state import _chunk_state_bwd_ddAcs_stable
-from ssd_chunk_state import chunk_state, chunk_state_ref
-from ssd_chunk_state import chunk_state_varlen
-from ssd_state_passing import _state_passing_fwd, _state_passing_bwd
-from ssd_state_passing import state_passing, state_passing_ref
-from ssd_chunk_scan import _chunk_scan_fwd, _chunk_scan_bwd_dz, _chunk_scan_bwd_dstates
-from ssd_chunk_scan import _chunk_scan_bwd_dC, _chunk_scan_bwd_dcb
-from ssd_chunk_scan import _chunk_scan_bwd_ddAcs_stable
-from ssd_chunk_scan import chunk_scan, chunk_scan_ref
-from ssd_chunk_scan import _chunk_scan_bwd_ddAcs_prev
-from layernorm_gated import rmsnorm_fn, _layer_norm_fwd, _layer_norm_bwd
-from k_activations import _swiglu_fwd, _swiglu_bwd
+from ssd.bi.ssd_bmm import _bmm_chunk_fwd, _bmm_chunk_bwd
+from ssd.bi.ssd_chunk_state import _chunk_cumsum_fwd, _chunk_cumsum_bwd
+from ssd.bi.ssd_chunk_state import _chunk_state_fwd, _chunk_state_bwd_db
+from ssd.bi.ssd_chunk_state import _chunk_state_bwd_ddAcs_stable
+from ssd.bi.ssd_chunk_state import chunk_state, chunk_state_ref
+from ssd.bi.ssd_chunk_state import chunk_state_varlen
+from ssd.bi.ssd_state_passing import _state_passing_fwd, _state_passing_bwd
+from ssd.bi.ssd_state_passing import state_passing, state_passing_ref
+from ssd.bi.ssd_chunk_scan import _chunk_scan_fwd, _chunk_scan_bwd_dz, _chunk_scan_bwd_dstates
+from ssd.bi.ssd_chunk_scan import _chunk_scan_bwd_dC, _chunk_scan_bwd_dcb
+from ssd.bi.ssd_chunk_scan import _chunk_scan_bwd_ddAcs_stable
+from ssd.bi.ssd_chunk_scan import chunk_scan, chunk_scan_ref
+from ssd.bi.ssd_chunk_scan import _chunk_scan_bwd_ddAcs_prev
+from ssd.bi.layernorm_gated import rmsnorm_fn, _layer_norm_fwd, _layer_norm_bwd
+from ssd.bi.k_activations import _swiglu_fwd, _swiglu_bwd
 
 TRITON_22 = version.parse(triton.__version__) >= version.parse('2.2.0')
 
