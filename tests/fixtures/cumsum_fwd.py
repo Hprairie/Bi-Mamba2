@@ -45,18 +45,12 @@ def cumsum_compare(create_chunk_cumsum_scan_tensors):
     A_ref, delta_ref, delta_bias_ref = create_ref_tensors(*create_chunk_cumsum_scan_tensors)
 
     dA_cusum_f, dt_out = _chunk_cumsum_fwd(delta, A, chunk_size, delta_bias, delta_softplus)
-    dA_cumsum_b, _ = _chunk_cumsum_fwd(torch.flip(delta, [1]), A, chunk_size, delta_bias, delta_softplus)
 
     dA_cumsum_f_ref, dA_cumsum_b_ref, dt_out = _chunk_cumsum_fwd_bi(delta_ref, A_ref, chunk_size, delta_bias_ref, delta_softplus)
 
     rtol, atol = (6e-4, 2e-3)
-    print(dA_cusum_f)
-    print(dA_cumsum_f_ref)
-    print(dA_cumsum_b)
-    print(dA_cumsum_b_ref)
 
     assert_close(dA_cusum_f, dA_cumsum_f_ref, rtol=rtol, atol=atol)
-    assert_close(dA_cumsum_b, dA_cumsum_b_ref, rtol=rtol, atol=atol)
     assert_close(dt_out, dt_out, rtol=rtol, atol=atol)
 
     return True

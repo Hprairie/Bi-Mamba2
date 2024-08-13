@@ -81,10 +81,13 @@ def _chunk_cumsum_fwd_kernel(
     A = tl.load(A_ptrs, mask=offs_h < nheads, other=0.0).to(tl.float32)
     dA = dt * A[:, None]
     dA_cs_f = tl.cumsum(dA, axis=1)
+    tl.store(dA_cs_f_ptrs, dA_cs_f, mask=(offs_h[:, None] < nheads) & (offs_c[None, :] < chunk_size))
+    # Triton reverse cumsum is broken as of 3.0.0 (You can remove this hack when fixed)
+    # dA_cs_last = tl.load(dA_cumsum_f_ptr + (offs_h[:, None] * stride_dA_cs_f_head + (chunk_size_limit - 1) * stride_dA_cs_f_csize), mask=(offs_h[:, None] < nheads), other=0.0).to(tl.float32)
     dA_cs_b = tl.flip(tl.cumsum(tl.flip(dA, dim=1), axis=1))
     # dA_cs_b = tl.cumsum(dA, axis=1, reverse=True)
-    tl.device_print("WHY", dA_cs_b)
-    tl.store(dA_cs_f_ptrs, dA_cs_f, mask=(offs_h[:, None] < nheads) & (offs_c[None, :] < chunk_size))
+    # print("last", dA_cs_last)
+    # dA_cs_b =  dA_cs_last - dA_cs_f + dA # Reverse scan is broken thus (dA_cumsum_last - dA_cs_f) + dA will reverse the cumsum
     tl.store(dA_cs_b_ptrs, dA_cs_b, mask=(offs_h[:, None] < nheads) & (offs_c[None, :] < chunk_size))
 
 
