@@ -248,8 +248,9 @@ def _chunk_state_fwd_kernel(
         b_ptrs += BLOCK_SIZE_K * stride_b_seqlen
         dt_ptrs += BLOCK_SIZE_K * stride_dt_csize
         dA_cumsum_f_ptrs += BLOCK_SIZE_K * stride_dA_cs_f_csize
-    states_f = acc_f.to(states_ptr.dtype.element_ty)
-    states_b = acc_b.to(states_ptr.dtype.element_ty)
+        dA_cumsum_b_ptrs += BLOCK_SIZE_K * stride_dA_cs_b_csize
+    states_f = acc_f.to(states_f_ptr.dtype.element_ty)
+    states_b = acc_b.to(states_b_ptr.dtype.element_ty)
 
     states_f_ptr += pid_b * stride_states_f_batch + pid_c * stride_states_f_chunk + pid_h * stride_states_f_head
     states_b_ptr += pid_b * stride_states_b_batch + pid_c * stride_states_b_chunk + pid_h * stride_states_b_head
