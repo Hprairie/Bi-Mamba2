@@ -37,7 +37,7 @@ def init_to_zero(names):
         triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32}, num_stages=5, num_warps=2),
         triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=2),
     ],
-    key=['chunk_size', 'hdim', 'dstate', 'IS_CAUSAL'],
+    key=['chunk_size', 'hdim', 'dstate'],
 )
 @triton.jit
 def _chunk_scan_fwd_kernel(
