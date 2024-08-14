@@ -41,7 +41,7 @@ def bi_fwd(x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus):
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=['seqlen'],  # Argument names to use as an x-axis for the plot.
-        x_vals=[2**i for i in range(1, 12, 1)],  # Different possible values for `x_name`.
+        x_vals=[2**i for i in range(1, 14, 1)],  # Different possible values for `x_name`.
         x_log=True,  # x axis is logarithmic.
         line_arg='provider',  # Argument name whose value corresponds to a different line in the plot.
         line_vals=['Native Mamba2', 'Bi-Mamba2'],  # Possible values for `line_arg`.

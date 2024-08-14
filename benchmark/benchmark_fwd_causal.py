@@ -12,7 +12,7 @@ def init(seqlen):
     headdim = 16
     ngroups = 4
     dstate = 16
-    chunk_size = 32
+    chunk_size = 128
     delta_softplus = True
     device = torch.device("cuda")
     x = torch.randn((batch, seqlen, nheads, headdim)).to(device)
@@ -38,7 +38,7 @@ def bi_fwd(x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus):
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=['seqlen'],  # Argument names to use as an x-axis for the plot.
-        x_vals=[2**i for i in range(1, 12, 1)],  # Different possible values for `x_name`.
+        x_vals=[2**i for i in range(1, 14, 1)],  # Different possible values for `x_name`.
         x_log=True,  # x axis is logarithmic.
         line_arg='provider',  # Argument name whose value corresponds to a different line in the plot.
         line_vals=['Causal Mamba2', 'Bi-Mamba2'],  # Possible values for `line_arg`.

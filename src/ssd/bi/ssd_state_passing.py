@@ -52,11 +52,11 @@ def _state_passing_fwd_kernel(
     out_ptrs = out_ptr + offs_m * stride_out_dim
     final_states_ptrs = final_states_ptr + offs_m * stride_final_states_dim
 
-    states = tl.zeros((BLOCK_SIZE, ), dtype=tl.float32)
-    tl.store(out_ptrs, states, mask=offs_m < dim)
-    out_ptrs += stride_out_chunk
     if not REVERSE:
         # Default forward branch
+        states = tl.zeros((BLOCK_SIZE, ), dtype=tl.float32)
+        tl.store(out_ptrs, states, mask=offs_m < dim)
+        out_ptrs += stride_out_chunk
         for c in range(nchunks):
             new_states = tl.load(states_ptrs, mask=offs_m < dim, other=0.0).to(tl.float32)
             dA_cs = tl.load(dA_cs_ptr).to(tl.float32)
@@ -75,6 +75,9 @@ def _state_passing_fwd_kernel(
         dA_cs_ptr += (nchunks - 1) * stride_dA_cs_chunk
         out_ptrs += (nchunks - 1) * stride_out_chunk
         # Reverse branch
+        states = tl.zeros((BLOCK_SIZE, ), dtype=tl.float32)
+        tl.store(out_ptrs, states, mask=offs_m < dim)
+        out_ptrs -= stride_out_chunk
         for c in range(nchunks - 1, -1, -1):
             new_states = tl.load(states_ptrs, mask=offs_m < dim, other=0.0).to(tl.float32)
             dA_cs = tl.load(dA_cs_ptr).to(tl.float32)
