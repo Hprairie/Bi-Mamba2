@@ -29,5 +29,7 @@ You can access the normal `ssd` kernels through `ssd.uni`. You can access the bi
 
 Comparing the Bi-Mamba2 optimized kernel, to the Naive approach of flipping and accumulating the sequence, we get the following.
 
-![Bi-Mamba2](assets/Naive_Comparison.png)
+<p align="center">
+  <img src="assets/Naive_Comparisson.png" width="800" />
+</p>
 
