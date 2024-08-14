@@ -6,6 +6,9 @@ Several works such as Hydra and MambaMixer have formulated bidirectionality thro
 
 I still haven't finished this kernel or benchmarked it. I will remove this notice when I do so.
 
+- Fwd is almost done I will check it off the TODO when all tests are passing
+- I am still writing the bwd, and will post updates as I go
+
 # Project Structure and Install
 
 To access the kernels, run:
