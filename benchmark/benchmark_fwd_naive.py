@@ -12,7 +12,7 @@ def init(seqlen):
     headdim = 16
     ngroups = 4
     dstate = 16
-    chunk_size = 32
+    chunk_size = 128
     delta_softplus = True
     device = torch.device("cuda")
     x = torch.randn((batch, seqlen, nheads, headdim)).to(device)
