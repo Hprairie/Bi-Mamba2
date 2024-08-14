@@ -59,15 +59,19 @@ def fwd_compare(create_fwd_scan_tensors):
             x=x, dt=dt, A=A, B=B, C=C, D=D, dt_bias=delta_bias, z=z, chunk_size=chunk_size, dt_softplus=delta_softplus,
             )
     z = z.flip([1]) if z is not None else None
-    out, out_x2, dt_b, dA_cumsum_b, states_b, final_states_b = _mamba_chunk_scan_combined_fwd(
+    out2, out_x2, dt_b, dA_cumsum_b, states_b, final_states_b = _mamba_chunk_scan_combined_fwd(
             x=x.flip([1]), dt=dt.flip([1]), A=A, B=B.flip([1]), C=C.flip([1]), D=None, dt_bias=delta_bias, z=z, chunk_size=chunk_size, dt_softplus=delta_softplus,
             )
     if z is not None:
         out_x = out_x + out_x2.flip([1])
     else:
-        out = out + out.flip([1])
+        print(f'{out=}')
+        print(f'{out2.flip([1])=}')
+        out = out + out2.flip([1])
 
     out_ref, out_x_ref, dt_ref, dA_cumsum_f_ref, dA_cumsum_b_ref, states_f_ref, states_b_ref, final_states_f_ref, final_states_b_ref = _mamba_chunk_scan_combined_fwd_bi(x=x_ref, dt=dt_ref, A=A_ref, B=B_ref, C=C_ref, D=D_ref, dt_bias=delta_bias_ref, z=z_ref, chunk_size=chunk_size, dt_softplus=delta_softplus)
+
+    dA_cumsum_b = dA_cumsum_b.flip([2,3])
 
     print(f'{dA_cumsum_f=}')
     print(f'{dA_cumsum_f_ref=}')

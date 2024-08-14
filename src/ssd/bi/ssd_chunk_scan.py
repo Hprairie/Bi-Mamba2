@@ -131,22 +131,24 @@ def _chunk_scan_fwd_kernel(
     x_ptrs = x_ptr + (offs_k[:, None] * stride_x_seqlen + offs_n[None, :] * stride_x_hdim)
     dt_ptrs = dt_ptr + offs_k * stride_dt_csize
     dA_cumsum_f_ptrs = dA_cumsum_f_ptr + offs_k * stride_dA_cs_f_csize
-    dA_cumsum_b_ptrs = dA_cumsum_f_ptr + offs_k * stride_dA_cs_b_csize
+    dA_cumsum_b_ptrs = dA_cumsum_b_ptr + offs_k * stride_dA_cs_b_csize
     K_F_MAX = min((pid_m) * BLOCK_SIZE_M, chunk_size_limit)
     for k in range(0, chunk_size_limit, BLOCK_SIZE_K):
         cb = tl.load(cb_ptrs, mask=(offs_m[:, None] < chunk_size) & (offs_k[None, :] < chunk_size - k), other=0.0).to(tl.float32)
         if k <= K_F_MAX and k + BLOCK_SIZE_K >= K_F_MAX: # Mimic self attention
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
-            mask_f = offs_m[:, None] >= k + offs_k[None, :]
-            dA_cs_b_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
-            mask_b = offs_m[:, None] <= k + offs_k[None, :]
-            cb *= tl.where(mask_f, tl.exp((dA_cs_f_m[:, None] - dA_cs_f_k[None, :])), 0.0) + tl.where(mask_b, tl.exp((dA_cs_b_m[:, None] - dA_cs_b_k[None, :])), 0.0)
+            mask_f = offs_m[:, None] >= (k + offs_k[None, :])
+            cb_f = cb * tl.where(mask_f, tl.exp((dA_cs_f_m[:, None] - dA_cs_f_k[None, :])), 0.0)
+            dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
+            mask_b = offs_m[:, None] <= (k + offs_k[None, :])
+            cb = cb_f + cb * tl.where(mask_b, tl.exp((dA_cs_b_m[:, None] - dA_cs_b_k[None, :])), 0.0)
+            #cb *= tl.exp(tl.where(mask_f, dA_cs_f_m[:, None] - dA_cs_f_k[None, :], 0.0) + tl.where(mask_b, dA_cs_b_m[:, None] - dA_cs_b_k[None, :], 0.0))
         elif k < K_F_MAX: # Mimic causal fwd attention
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask = offs_m[:, None] >= k + offs_k[None, :]
             cb *= tl.where(mask, tl.exp((dA_cs_f_m[:, None] - dA_cs_f_k[None, :])), 0.0)
         elif k > K_F_MAX: # Mimic causal bwd attention
-            dA_cs_b_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
+            dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask = offs_m[:, None] <= k + offs_k[None, :]
             cb *= tl.where(mask, tl.exp((dA_cs_b_m[:, None] - dA_cs_b_k[None, :])), 0.0)
         dt_k = tl.load(dt_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
