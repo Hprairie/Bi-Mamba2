@@ -6,6 +6,9 @@ Several works such as Hydra and MambaMixer have formulated bidirectionality thro
 
 I still haven't finished this kernel or benchmarked it. I will remove this notice when I do so.
 
+- Fwd is almost done I will check it off the TODO when all tests are passing
+- I am still writing the bwd, and will post updates as I go
+
 # Project Structure and Install
 
 To access the kernels, run:
@@ -24,6 +27,8 @@ You can access the normal `ssd` kernels through `ssd.uni`. You can access the bi
 
 ## Benchmarking
 
-Benchmarking the Forward Pass saves a lot of time.
+Comparing the Bi-Mamba2 optimized kernel, to the Naive approach of flipping flipping and accumulating the sequence, we get the following.
 
 ![Bi-Mamba2](assets/Bidirectional_Comparison.png)
+
+
