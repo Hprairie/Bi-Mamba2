@@ -453,6 +453,7 @@ def _chunk_state_bwd_db_kernel(
         if HAS_DDA_CS:
             # This is the gradient wrt (dA_cs_last - dA_cs_m), i.e. the exclusive reverse cumsum
             ddA_cs_f = tl.sum(db_f * b, axis=1)
+            # In CUDA we would use __shuffle to shuffle the info down, here we just adjust the out pointers
             tl.atomic_add(ddA_cumsum_f_ptrs + stride_ddA_cs_f_csize, ddA_cs_f, mask=offs_m < chunk_size - 1)
 
         # Process Backward
@@ -467,6 +468,7 @@ def _chunk_state_bwd_db_kernel(
             # This is the gradient wrt (dA_cs_last - dA_cs_m), i.e. the exclusive reverse cumsum
             ddA_cs_b = tl.sum(db_b * b, axis=1)
             # We add (0 < offss_m) to the mask so that we don't overwrite different chunks/OOB
+            # In CUDA we would use __shuffle to shuffle the info down, here we just adjust the out pointers
             tl.atomic_add(ddA_cumsum_f_ptrs - stride_ddA_cs_b_csize, ddA_cs_b, mask= (0 < offs_m) & (offs_m < chunk_size - 1))
 
         # Update pointers

@@ -405,6 +405,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
         states_dtype=x.dtype,
         chunk_size=chunk_size,
     )
+
     # dstates has length nchunks, containing the gradient to states of chunk 0 at index 0 and
     # gradient to the final states at index (nchunks - 1)
     # states has length nchunks, containing the initial states at index 0 and the state for chunk (nchunks - 2) at index (nchunks - 1)
@@ -416,17 +417,29 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
 
     # Now that we have the gradients for each chunk, we can compute the gradients for each local input
 
+    # We calculate the gradients for dx and dD, which is simple and only requires the dstates
+    # With x_t we get dout_t * C_t * B_t + dout_{t+1} * C_t * B_{t+1} * A_{t + 1} + ...
     dx, ddt, dD_from_x = _chunk_scan_chunk_state_bwd_dx(x, dt, dA_cumsum_f, dA_cumsum_b, B, CB, dout, dstates_f, dstates_b, D=D, dx=dx)
     # dB = _chunk_state_bwd_db(x, dt, dA_cumsum, dstates, seq_idx=seq_idx, ngroups=ngroups)
+
+    # For the gradient dB, it is very similar to dx. In this kernel we calculate just a part of the gradients, specifically from outside the chunk
     dB, ddA_f_next, ddA_b_next = _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, B=B, ngroups=ngroups)
     # dC = _chunk_scan_bwd_dC(states[:, :-1].to(x.dtype), dA_cumsum, dout, seq_idx=seq_idx, ngroups=ngroups)
-    dC, ddA_cumsum_prev = _chunk_scan_bwd_dC(states.to(x.dtype), dA_cumsum, dout, seq_idx=seq_idx, C=C, ngroups=ngroups)
+
+    # For the gradiet of C it is only reliant on dout and the hidden states, specifically c_t = hidden_t * dout_t
+    # In this kernel we calculate just a part of the gradients, specifically form outside the chunk
+    dC, ddA_cumsum_prev = _chunk_scan_bwd_dC(states_f.to(x.dtype), states_b.to(x.dtype), dA_cumsum_f, dA_cumsum_b dout, C=C, ngroups=ngroups)
+
     # Computing ddA with the dcb kernel is much slower, so we're not using it for now
-    dCB = _chunk_scan_bwd_dcb(x, dt, dA_cumsum, dout, seq_idx=seq_idx, ngroups=ngroups)
+    # In this kernel we calculate in inner chunk gradients with respect to CB, we then split these gradients appart will a seperate kernel
+    dCB = _chunk_scan_bwd_dcb(x, dt, dA_cumsum, dout, ngroups=ngroups)
+
     # dCB, ddA_tmp = _chunk_scan_bwd_dcb(x, dt, dA_cumsum, dout, seq_idx=seq_idx, CB=CB, ngroups=ngroups)
     dCB = dCB.to(CB.dtype)
     _bmm_chunk_bwd(C, dCB, residual=dB, out=dB_given)
     _bmm_chunk_bwd(B, rearrange(dCB, "... l s -> ... s l"), residual=dC, out=dC_given)
+
+
     # If we have z, then dout_x is recomputed in fp32 so dD = (dout_x * x).sum() is more accurate
     # than dD_from_x = (dout_x * x).sum() where dout_x is in fp16/bf16
     if z is None:
