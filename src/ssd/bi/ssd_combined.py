@@ -428,7 +428,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
 
     # For the gradiet of C it is only reliant on dout and the hidden states, specifically c_t = hidden_t * dout_t
     # In this kernel we calculate just a part of the gradients, specifically form outside the chunk
-    dC, ddA_cumsum_prev = _chunk_scan_bwd_dC(states_f.to(x.dtype), states_b.to(x.dtype), dA_cumsum_f, dA_cumsum_b dout, C=C, ngroups=ngroups)
+    dC, ddA_cumsum_prev_f, ddA_cumsum_prev_b = _chunk_scan_bwd_dC(states_f.to(x.dtype), states_b.to(x.dtype), dA_cumsum_f, dA_cumsum_b, dout, C=C, ngroups=ngroups)
 
     # Computing ddA with the dcb kernel is much slower, so we're not using it for now
     # In this kernel we calculate in inner chunk gradients with respect to CB, we then split these gradients appart will a seperate kernel
