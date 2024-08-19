@@ -432,7 +432,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
 
     # Computing ddA with the dcb kernel is much slower, so we're not using it for now
     # In this kernel we calculate in inner chunk gradients with respect to CB, we then split these gradients appart will a seperate kernel
-    dCB = _chunk_scan_bwd_dcb(x, dt, dA_cumsum, dout, ngroups=ngroups)
+    dCB = _chunk_scan_bwd_dcb(x, dt, dA_cumsum_f, dA_cumsum_b, dout, ngroups=ngroups)
 
     # dCB, ddA_tmp = _chunk_scan_bwd_dcb(x, dt, dA_cumsum, dout, seq_idx=seq_idx, CB=CB, ngroups=ngroups)
     dCB = dCB.to(CB.dtype)
@@ -451,8 +451,10 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
 
     # This is already done as part of bwd_dC kernel
     # ddA_cumsum_prev = _chunk_scan_bwd_ddAcs_prev(states[:, :-1], C, dout, dA_cumsum, seq_idx=seq_idx)
-    ddA_cumsum_prev[..., -1] += ddA_chunk_cumsum
-    ddA_prev = ddA_cumsum_prev.flip([-1]).cumsum(dim=-1).flip([-1])
+    ddA_cumsum_prev_f[..., -1] += ddA_chunk_cumsum_f
+    ddA_prev_f = ddA_cumsum_prev_f.flip([-1]).cumsum(dim=-1).flip([-1])
+    ddA_cumsum_prev_b[..., 0] += ddA_chunk_cumsum_b
+    ddA_prev_f = ddA_cumsum_prev_b.cumsum(dim=-1) # We go forward for b
     # This is already done as part of bwd_dB kernel
     # ddA_next = _chunk_state_bwd_ddAcs_stable(B, x, dt, dA_cumsum, dstates, seq_idx=seq_idx)
     # We don't need to pass in seq_idx because CB also zeros out entries where seq_idx[i] != seq_idx[j]
