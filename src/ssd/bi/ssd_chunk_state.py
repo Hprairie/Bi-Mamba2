@@ -365,14 +365,14 @@ def _chunk_state_bwd_dx_kernel(
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
     ],
     key=['chunk_size', 'dstate', 'hdim'],
 )
@@ -833,7 +833,7 @@ def _chunk_state_bwd_dx(B, x, dt, dA_cumsum, dstates, dx=None):
     return dx, ddt.to(dt.dtype), ddA_cumsum.to(dA_cumsum.dtype)
 
 
-def _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, seq_idx=None, B=None, ngroups=1):
+def _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, B=None, ngroups=1):
     batch, seqlen, nheads, headdim = x.shape
     _, _, nchunks, chunk_size = dt.shape
     dstate = dstates_f.shape[-1]
@@ -842,8 +842,6 @@ def _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, s
     assert dA_cumsum_b.shape == dt.shape
     assert dstates_f.shape == (batch, nchunks, nheads, headdim, dstate)
     assert dstates_b.shape == (batch, nchunks, nheads, headdim, dstate)
-    if seq_idx is not None:
-        assert seq_idx.shape == (batch, seqlen)
     if B is not None:
         assert B.shape == (batch, seqlen, ngroups, dstate)
         B_strides = (B.stride(0), B.stride(1), B.stride(2), B.stride(3))
@@ -867,7 +865,7 @@ def _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, s
                         batch * nchunks, nsplits * ngroups)
     with torch.cuda.device(x.device.index):
         _chunk_state_bwd_db_kernel[grid_db](
-            x, dstates_f, dstates_b, B, dt, dA_cumsum_f, dA_cumsum_b, seq_idx, dB, ddA_cumsum_f, ddA_cumsum_b,
+            x, dstates_f, dstates_b, B, dt, dA_cumsum_f, dA_cumsum_b, dB, ddA_cumsum_f, ddA_cumsum_b,
             chunk_size, dstate, headdim,
             batch, seqlen, nheads, nheads_per_program, ngroups,
             x.stride(0), x.stride(1), x.stride(2), x.stride(3),
@@ -877,12 +875,10 @@ def _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, s
             dt.stride(0), dt.stride(2), dt.stride(1), dt.stride(3),
             dA_cumsum_f.stride(0), dA_cumsum_f.stride(2), dA_cumsum_f.stride(1), dA_cumsum_f.stride(3),
             dA_cumsum_b.stride(0), dA_cumsum_b.stride(2), dA_cumsum_b.stride(1), dA_cumsum_b.stride(3),
-            *((seq_idx.stride(0), seq_idx.stride(1)) if seq_idx is not None else (0, 0)),
             dB.stride(0), dB.stride(1), dB.stride(2), dB.stride(3), dB.stride(4),
             *ddA_cumsum_f_strides,
             *ddA_cumsum_b_strides,
             HAS_DDA_CS=ddA_cumsum_f is not None,
-            HAS_SEQ_IDX=seq_idx is not None,
             BLOCK_SIZE_K=max(triton.next_power_of_2(headdim), 16),
         )
     dB = dB.sum(2)

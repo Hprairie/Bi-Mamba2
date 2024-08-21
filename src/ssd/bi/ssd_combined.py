@@ -179,19 +179,19 @@ def _chunk_scan_chunk_state_bwd_dx_kernel(
         if k <= K_F_MAX and k + BLOCK_SIZE_K >= K_F_MAX: # We need to do both forward and backward scans
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask_f = (k + offs_k[None, :] >= offs_m[:, None]) & (k + offs_k[None, :] < K_MAX)
-            cb_f = cb * tl.where(mask_f, tl.exp((dA_cs_f_k[:, None] - dA_cs_f_m[None, :])), 0.0)
+            cb_f = cb * tl.where(mask_f, tl.exp((dA_cs_f_k[None, :] - dA_cs_f_m[:, None])), 0.0)
             dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
-            mask_b = k + offs_k[:, None] <= offs_m[:, None]
-            cb = cb_f + cb * tl.where(mask_b, tl.exp((dA_cs_b_k[:, None] - dA_cs_b_m[None, :])), 0.0)
+            mask_b = k + offs_k[None, :] <= offs_m[:, None]
+            cb = cb_f + cb * tl.where(mask_b, tl.exp((dA_cs_b_k[None, :] - dA_cs_b_m[:, None])), 0.0)
             #cb *= tl.exp(tl.where(mask_f, dA_cs_f_m[:, None] - dA_cs_f_k[None, :], 0.0) + tl.where(mask_b, dA_cs_b_m[:, None] - dA_cs_b_k[None, :], 0.0))
         elif k < K_F_MAX: # We need to only do the backward scans 
             dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
-            mask_b = k + offs_k[:, None] <= offs_m[:, None]
-            cb *= tl.where(mask_b, tl.exp((dA_cs_b_k[:, None] - dA_cs_b_m[None, :])), 0.0)
+            mask_b = k + offs_k[None, :] <= offs_m[:, None]
+            cb *= tl.where(mask_b, tl.exp((dA_cs_b_k[None, :] - dA_cs_b_m[:, None])), 0.0)
         elif k > K_F_MAX: # We need to only do the foward scans
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask_f = (k + offs_k[None, :] >= offs_m[:, None]) & (k + offs_k[None, :] < K_MAX)
-            cb *= tl.where(mask_f, tl.exp((dA_cs_f_k[:, None] - dA_cs_f_m[None, :])), 0.0)
+            cb *= tl.where(mask_f, tl.exp((dA_cs_f_k[None, :] - dA_cs_f_m[:, None])), 0.0)
         cb = cb.to(dout_ptr.dtype.element_ty)
         acc += tl.dot(cb, dout)
         cb_ptrs += BLOCK_SIZE_K * stride_cb_csize_k
@@ -423,6 +423,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     # dB = _chunk_state_bwd_db(x, dt, dA_cumsum, dstates, seq_idx=seq_idx, ngroups=ngroups)
 
     # For the gradient dB, it is very similar to dx. In this kernel we calculate just a part of the gradients, specifically from outside the chunk
+    # NOTE: We can fuse ddA_next_f and ddA_next_b (Rewrite this to save memory and time)
     dB, ddA_next_f, ddA_next_b = _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, B=B, ngroups=ngroups)
     # dC = _chunk_scan_bwd_dC(states[:, :-1].to(x.dtype), dA_cumsum, dout, seq_idx=seq_idx, ngroups=ngroups)
 
@@ -469,7 +470,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     # _, dA = selective_scan_bwd(dout, x, dt, A, B, C, D=D.float(), z=z)
     # ddt_given.copy_(ddt)
 
-    return_vals = (dx, ddt_given, dA, dB_given, dC_given, dD, dz, ddt_bias, dinitial_states)
+    return_vals = (dx, ddt_given, dA, dB_given, dC_given, dD, dz, ddt_bias)
     return return_vals if not recompute_output else (*return_vals, outz)
 
 

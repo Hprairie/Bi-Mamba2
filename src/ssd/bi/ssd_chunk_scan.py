@@ -519,19 +519,19 @@ def _chunk_scan_bwd_dstates_kernel(
     dprev_states_f_ptrs = dprev_states_f_ptr + (offs_m[:, None] * stride_dprev_states_f_hdim + offs_n[None, :] * stride_dprev_states_f_dstate)
     dprev_states_b_ptrs = dprev_states_b_ptr + (offs_m[:, None] * stride_dprev_states_b_hdim + offs_n[None, :] * stride_dprev_states_b_dstate)
     tl.store(dprev_states_f_ptrs, out_f, mask=(offs_m[:, None] < hdim) & (offs_n[None, :] < dstate))
-    tl.soter(dprev_states_b_ptrs, out_b, mask=(offs_m[:, None] < hdim) & (offs_n[None, :] < dstate))
+    tl.store(dprev_states_b_ptrs, out_b, mask=(offs_m[:, None] < hdim) & (offs_n[None, :] < dstate))
 
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4, pre_hook=init_to_zero(["ddA_cumsum_f_ptr", "ddA_cumsum_b_ptr"])),
     ],
     key=['chunk_size', 'dstate', 'hdim'],
 )
@@ -609,7 +609,7 @@ def _chunk_scan_bwd_dc_kernel(
             ddA_cs_f = tl.sum(dc_f * c, axis=1)
             tl.atomic_add(ddA_cumsum_f_ptrs, ddA_cs_f, mask=offs_m < chunk_size)
         # We then do the backward part
-        prev_states_b = tl.load(prev_states_b_ptrs, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
+        prev_states_b = tl.load(prev_states_b_ptrs, mask=(offs_k[:, None] < hdim) & (offs_n[None, :] < dstate), other=0.0).to(tl.float32)
         prev_states_b = prev_states_b.to(dout_ptrs.dtype.element_ty)
         dc_b =  tl.dot(dout, prev_states_b)
         dA_cs_b_m = tl.load(dA_cumsum_b_ptrs, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
@@ -839,7 +839,7 @@ def _chunk_scan_bwd_dcb_kernel(
             mask = offs_m[:, None] >= offs_n[None, :]
             A_f = tl.where(mask, tl.exp(dA_cs_f_m[:, None] - dA_cs_f_n[None, :]), 0.0)
             dA_cs_b_m = tl.load(dA_cumsum_b_ptr + offs_m * stride_dA_cs_b_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
-            dA_cs_b_n = tl.load(dA_cumsum_b_ptr + offs_n * stride_dA_cs_b_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
+            dA_cs_b_n = tl.load(dA_cumsum_b_ptr + offs_n * stride_dA_cs_b_csize, mask=offs_n < chunk_size_limit, other=0.0).to(tl.float32)
             mask = offs_m[:, None] <= offs_n[None, :]
             A_b = tl.where(mask, tl.exp(dA_cs_b_m[:, None] - dA_cs_b_n[None, :]), 0.0)
             dcb *= A_f + A_b
@@ -852,7 +852,7 @@ def _chunk_scan_bwd_dcb_kernel(
         else:
             # We are at a later timestep
             dA_cs_b_m = tl.load(dA_cumsum_b_ptr + offs_m * stride_dA_cs_b_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
-            dA_cs_b_n = tl.load(dA_cumsum_b_ptr + offs_n * stride_dA_cs_b_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
+            dA_cs_b_n = tl.load(dA_cumsum_b_ptr + offs_n * stride_dA_cs_b_csize, mask=offs_n < chunk_size_limit, other=0.0).to(tl.float32)
             mask = offs_m[:, None] <= offs_n[None, :]
             dcb *= tl.where(mask, tl.exp(dA_cs_b_m[:, None] - dA_cs_b_n[None, :]), 0.0)
         acc += dcb
@@ -1102,7 +1102,6 @@ def _chunk_scan_bwd_ddAcs_stable_bwd_kernel(
     stride_cb_batch, stride_cb_chunk, stride_cb_head, stride_cb_csize_m, stride_cb_csize_n,
     stride_ddA_cs_batch, stride_ddA_cs_chunk, stride_ddA_cs_head, stride_ddA_cs_csize_m, stride_ddA_cs_csize_n,
     # Meta-parameters
-    REVERSE: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
 ):
     pid_bc = tl.program_id(axis=1)
@@ -1195,7 +1194,6 @@ def _chunk_scan_bwd_ddAcs_stable_fwd_kernel(
     stride_cb_batch, stride_cb_chunk, stride_cb_head, stride_cb_csize_m, stride_cb_csize_n,
     stride_ddA_cs_batch, stride_ddA_cs_chunk, stride_ddA_cs_head, stride_ddA_cs_csize_m, stride_ddA_cs_csize_n,
     # Meta-parameters
-    REVERSE: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
 ):
     pid_bc = tl.program_id(axis=1)
