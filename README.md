@@ -4,7 +4,7 @@ Several works such as Hydra and MambaMixer have formulated bidirectionality thro
 
 # NOTE
 
-The fwd kernel is implemented, tested, and benchmarked. The bwd kernel is still in progress. I will remove this note when it's done.
+The fwd kernel is implemented, tested, and benchmarked. The bwd kernel is still in progress. I will remove this note when it's done. The bwd is written, just needs to be debugged and tested.
 
 # A Brief Overview of Bidirectionality in Mamba
 
@@ -27,6 +27,7 @@ To access the kernels, run:
 ```shell
 pip install -e .
 ```
+
 You can access the normal `ssd` kernels through `ssd.uni`. You can access the bidirectional kernels through `ssd.bi`.
 
 ### Installing with PyPi
@@ -37,30 +38,51 @@ Coming soon.
 
 - [x] Write FWD Implementation
 - [x] Debug and Test FWD Implemntation
-- [ ] Write BWD Implementation
+- [x] Write BWD Implementation
 - [ ] Debug and Test BWD Implementation
 - [ ] Create PyPi Package
 - [ ] Add more benchmarks
 
 # Benchmarking
 
-Comparing the Bi-Mamba2 optimized kernel, to the Naive approach of flipping and accumulating the sequence, we get the following.
+The benchmarking code can be found in the `benchmark` folder. It can be run by using the following commmand:
 
+```shell
+python benchmark/benchmark_fwd_naive.py
+```
+
+## AMD 7900 XTX and 3970X Threadripper
+
+Comparisson of fwd pass of Bi-Mamba2 v. Naive Flipping and Running Mamba2 kernel twice.
 <p align="center">
   <img src="assets/Naive_Comparison.png" width="800" />
 </p>
 
-Furthermore, we can compare the cost of the Bi-Directional kernel to the causal kernel (i.e. the original Mamba2 kernel). At long sequence lengths, the Bi-Directional kernel has a very minor overhead compared to the causal kernel.
+Comparison of fwd pass of Bi-Mamba2 v. causal Mamba2.
 
 <p align="center">
   <img src="assets/Causal_Comparison.png" width="800" />
 </p>
 
-The benchmarking was done on a 7900 XTX, and a 3970X Threadripper. The benchmarking code can be found in the `benchmark` folder. It can be run by using the following commmand:
+Comparison of bwd pass of Bi-Mamba2 v. Naive Flipping and Running Mamba2 kernel twice.
 
-```shell
-python benchmark/benchmark_fwd_naive.py
-```
+...
+
+Comparison of bwd pass of Bi-Mamba2 v. causal Mamba2.
+
+...
+
+## 4060 Ti and Ryzen 9 8945HS
+
+Coming Soon
+
+## A100 40GB and Epyc 7763
+
+Coming Soon
+
+## H200 and Grace Chip
+
+Coming Soon
 
 # Tests
 

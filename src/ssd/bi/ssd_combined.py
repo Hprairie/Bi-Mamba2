@@ -29,7 +29,7 @@ from ssd.bi.ssd_state_passing import _state_passing_fwd, _state_passing_bwd
 from ssd.bi.ssd_state_passing import state_passing, state_passing_ref
 from ssd.bi.ssd_chunk_scan import _chunk_scan_fwd, _chunk_scan_bwd_dz, _chunk_scan_bwd_dstates
 from ssd.bi.ssd_chunk_scan import _chunk_scan_bwd_dC, _chunk_scan_bwd_dcb
-from ssd.bi.ssd_chunk_scan import _chunk_scan_bwd_ddAcs_stable
+from ssd.bi.ssd_chunk_scan import _chunk_scan_bwd_ddAcs_stable_fwd, _chunk_scan_bwd_ddAcs_stable_bwd
 from ssd.bi.ssd_chunk_scan import chunk_scan, chunk_scan_ref
 from ssd.bi.ssd_chunk_scan import _chunk_scan_bwd_ddAcs_prev
 from ssd.bi.layernorm_gated import rmsnorm_fn, _layer_norm_fwd, _layer_norm_bwd
@@ -423,7 +423,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     # dB = _chunk_state_bwd_db(x, dt, dA_cumsum, dstates, seq_idx=seq_idx, ngroups=ngroups)
 
     # For the gradient dB, it is very similar to dx. In this kernel we calculate just a part of the gradients, specifically from outside the chunk
-    dB, ddA_f_next, ddA_b_next = _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, B=B, ngroups=ngroups)
+    dB, ddA_next_f, ddA_next_b = _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, B=B, ngroups=ngroups)
     # dC = _chunk_scan_bwd_dC(states[:, :-1].to(x.dtype), dA_cumsum, dout, seq_idx=seq_idx, ngroups=ngroups)
 
     # For the gradiet of C it is only reliant on dout and the hidden states, specifically c_t = hidden_t * dout_t
@@ -454,12 +454,14 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     ddA_cumsum_prev_f[..., -1] += ddA_chunk_cumsum_f
     ddA_prev_f = ddA_cumsum_prev_f.flip([-1]).cumsum(dim=-1).flip([-1])
     ddA_cumsum_prev_b[..., 0] += ddA_chunk_cumsum_b
-    ddA_prev_f = ddA_cumsum_prev_b.cumsum(dim=-1) # We go forward for b
+    ddA_prev_b = ddA_cumsum_prev_b.cumsum(dim=-1) # We go forward for b
     # This is already done as part of bwd_dB kernel
     # ddA_next = _chunk_state_bwd_ddAcs_stable(B, x, dt, dA_cumsum, dstates, seq_idx=seq_idx)
     # We don't need to pass in seq_idx because CB also zeros out entries where seq_idx[i] != seq_idx[j]
-    ddA = _chunk_scan_bwd_ddAcs_stable(x, dt, dA_cumsum, dout, CB)
-    ddA += ddA_next + ddA_prev
+    # We don't doo kernel fusion here as the kernel is tricky (Can rewrite later potentially?)
+    ddA_f = _chunk_scan_bwd_ddAcs_stable_fwd(x, dt, dA_cumsum_f, dout, CB)
+    ddA_b = _chunk_scan_bwd_ddAcs_stable_bwd(x, dt, dA_cumsum_b, dout, CB)
+    ddA = ddA_b + ddA_f + ddA_next_f + ddA_next_b + ddA_prev_b + ddA_prev_f
 
     ddt_given, dA, ddt_bias = _chunk_cumsum_bwd(ddA, ddt, dt_in, A, dt_bias=dt_bias, dt_softplus=dt_softplus, dt_limit=dt_limit, ddt=ddt_given)
 
