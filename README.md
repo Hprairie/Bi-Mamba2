@@ -1,6 +1,8 @@
-# A Bi-Directional Extension of Mamba2
+<h1 align="center" style="fontsize:50em"><b>A Bi-Directional Extension of Mamba2</b></h1>
 
-Several works such as Hydra and MambaMixer have formulated bidirectionality through qusiseperable matrices. However, they often flip and rerun Mamba2's GPU kernel twice. This is too slow, and we can get a lot better performance if we fuse the kernel together. I edited the Triton Kernel from Mamba2 so that it efficiently computes bidirectional. This will save both memory space and also time.
+Several works such as Hydra and MambaMixer have formulated bidirectionality through qusiseperable matrices. I highly recommend reading both of these papers to understand how bi-directionality can be done with Mamba. Unfortunately both of these implementations don't have an optimized kernel, which often increases the training and inference time by more than **2x**.
+
+To over come this issue, I wrote the following GPU kernel which both reduces the memory overhead and the latency. It does so by fusing kernels together so that we minimize the number of loads and stores from global memory.
 
 # NOTE
 
@@ -42,6 +44,48 @@ Coming soon.
 - [ ] Debug and Test BWD Implementation
 - [ ] Create PyPi Package
 - [ ] Add more benchmarks
+
+# Modules and API
+
+There is two ways to access the Bi-directional kernel. The first is through the functional defenition. For example if you want to run a chunk-wise bi-directional selective scan, you can do so with the following snippet:
+
+**Causal Kernel**
+
+```python
+from ssd import ssd_selective_scan
+
+```
+
+**Bi-Directional Kernel**
+
+```python
+from ssd import bi_ssd_selective_scan
+
+```
+
+Alternatively you can also access it through a Module API, which is similar to a Mamba2 Layer:
+
+**Causal Kernel**
+
+```python
+from ssd import Mamba2
+
+layer = Mamba2(
+    causal=True
+)
+```
+
+**Causal Kernel**
+
+```python
+from ssd import Mamba2
+
+layer = Mamba2(
+    causal=False
+)
+```
+
+**Note** Currently using `seq_idx` like in Mamba2 causal is unsupported. Additionally `passing init_hidden_states` is also unsupported.
 
 # Benchmarking
 
@@ -91,3 +135,9 @@ To run a test, simply use pytest along with the specific test file. For example,
 ```shell
 python -m pytest -x -s -v tests/test_fwd_scan.py::TestFwd
 ```
+
+# Citation
+
+If you find this kernel useful please cite Mamba, Hydra, and MambaMixer (They are amazing works!).
+
+Give this repo a star also :)
