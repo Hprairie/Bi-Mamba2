@@ -82,7 +82,7 @@ y = model(x)
 assert y.shape == x.shape
 ```
 
-**Causal Kernel**
+**Bi-Directional Kernel**
 
 ```python
 from ssd import Mamba2

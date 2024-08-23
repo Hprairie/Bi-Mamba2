@@ -432,7 +432,7 @@ def _chunk_state_bwd_db_kernel(
     if HAS_DDA_CS:
         b_ptrs = b_ptr + (offs_m[:, None] * stride_b_seqlen + offs_n[None, :] * stride_b_dstate)
         ddA_cumsum_f_ptrs = ddA_cumsum_f_ptr + offs_m * stride_ddA_cs_f_csize
-        ddA_cumsum_b_ptrs = ddA_cumsum_b_ptr + offs_m * stride_ddA_cs_f_csize
+        ddA_cumsum_b_ptrs = ddA_cumsum_b_ptr + offs_m * stride_ddA_cs_b_csize
 
     chunk_size_limit = min(chunk_size, seqlen - pid_c * chunk_size)
     acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
@@ -469,7 +469,7 @@ def _chunk_state_bwd_db_kernel(
             ddA_cs_b = tl.sum(db_b * b, axis=1)
             # We add (0 < offss_m) to the mask so that we don't overwrite different chunks/OOB
             # In CUDA we would use __shuffle to shuffle the info down, here we just adjust the out pointers
-            tl.atomic_add(ddA_cumsum_f_ptrs - stride_ddA_cs_b_csize, ddA_cs_b, mask= (0 < offs_m) & (offs_m < chunk_size - 1))
+            tl.atomic_add(ddA_cumsum_b_ptrs - stride_ddA_cs_b_csize, ddA_cs_b, mask= (offs_m >= 1) & (offs_m < chunk_size))
 
         # Update pointers
         acc += db_f + db_b
@@ -479,8 +479,8 @@ def _chunk_state_bwd_db_kernel(
         dt_ptrs += stride_dt_head
         dA_cumsum_f_ptr += stride_dA_cs_f_head
         dA_cumsum_f_ptrs += stride_dA_cs_f_head
-        dA_cumsum_f_ptr += stride_dA_cs_b_head
-        dA_cumsum_f_ptrs += stride_dA_cs_b_head
+        dA_cumsum_b_ptr += stride_dA_cs_b_head
+        dA_cumsum_b_ptrs += stride_dA_cs_b_head
         if HAS_DDA_CS:
             ddA_cumsum_f_ptrs += stride_ddA_cs_f_head
             ddA_cumsum_b_ptrs += stride_ddA_cs_b_head
@@ -889,7 +889,8 @@ def _chunk_state_bwd_db(x, dt, dA_cumsum_f, dA_cumsum_b, dstates_f, dstates_b, B
         # But it's easier to just do the cumsum for all elements, the result will be the same.
         torch.cumsum(ddA_cumsum_f, dim=-1, out=ddA_cumsum_f)
         # Note that in the backward case then the last element of dda_cumsum_b will always be zero, and again it's simpler to just do the following
-        torch.cumsum(ddA_cumsum_b, dim=-1, out=ddA_cumsum_b)
+        torch.cumsum(ddA_cumsum_b.flip([2, 3]), dim=-1, out=ddA_cumsum_b)
+        ddA_cumsum_b = ddA_cumsum_b.flip([2, 3])
     return dB if B is None else (dB, ddA_cumsum_f, ddA_cumsum_b)
 
 
