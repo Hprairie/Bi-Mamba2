@@ -6,6 +6,7 @@ import pytest
 from fixtures.chunk_scan_bwd_dstates import chunk_scan_bwd_dstate_compare 
 from fixtures.chunk_scan_chunk_state_bwd_dx import chunk_scan_bwd_dx_compare
 from fixtures.chunk_scan_bwd_dc import chunk_scan_bwd_dc_compare 
+from fixtures.chunk_scan_bwd_dcb import chunk_state_bwd_dcb_compare
 
 
 @pytest.mark.parametrize("batch", [1])
@@ -44,3 +45,16 @@ class TestChunkScanBwdDx:
 class TestChunkScanBwdDc:
     def test_chunk_scan(self, chunk_scan_bwd_dc_compare):
         assert chunk_scan_bwd_dc_compare, "Chunk Scan Dc Bwd Test Failed"
+
+
+@pytest.mark.parametrize("batch", [1])
+@pytest.mark.parametrize("seqlen", [128])
+@pytest.mark.parametrize("nheads", [1])
+@pytest.mark.parametrize("chunk_size", [128])
+@pytest.mark.parametrize("ngroups", [1])
+@pytest.mark.parametrize("headdim", [1, 2, 32])
+@pytest.mark.parametrize("dstate", [1, 2, 32])
+@pytest.mark.parametrize("dtype", [torch.float32])
+class TestChunkScanBwdDcb:
+    def test_chunk_scan(self, chunk_state_bwd_dcb_compare):
+        assert chunk_state_bwd_dcb_compare, "Chunk Scan Dcb Bwd Test Failed"

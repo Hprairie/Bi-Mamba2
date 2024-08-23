@@ -776,8 +776,7 @@ def _chunk_scan_bwd_dx_kernel(
 @triton.jit
 def _chunk_scan_bwd_dcb_kernel(
     # Pointers to matrices
-    x_ptr, dout_ptr, dt_ptr, dA_cumsum_f_ptr, dA_cumsum_b_ptr,
-    dcb_ptr,
+    x_ptr, dout_ptr, dt_ptr, dA_cumsum_f_ptr, dA_cumsum_b_ptr, dcb_ptr,
     # Matrix dimensions
     chunk_size, hdim,
     batch, seqlen, nheads, nheads_per_program, ngroups,
@@ -814,24 +813,16 @@ def _chunk_scan_bwd_dcb_kernel(
     x_ptrs = x_ptr + (offs_n[None, :] * stride_x_seqlen + offs_k[:, None] * stride_x_hdim)
     dt_ptrs = dt_ptr + offs_n * stride_dt_csize
 
-    # We will out the whole matrix
-    # if pid_n * BLOCK_SIZE_N >= (pid_m + 1) * BLOCK_SIZE_M:
-    #     dcb_ptr += pid_b * stride_dcb_batch + pid_c * stride_dcb_chunk + pid_g * stride_dcb_group + pid_s * stride_dcb_split
-    #     dcb_ptrs = dcb_ptr + (offs_m[:, None] * stride_dcb_csize_m + offs_n[None, :] * stride_dcb_csize_n)
-    #     tl.store(dcb_ptrs, tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=dcb_ptr.dtype.element_ty), mask=(offs_m[:, None] < chunk_size) & (offs_n[None, :] < chunk_size))
-    #     return
-
     chunk_size_limit = min(chunk_size, seqlen - pid_c * chunk_size)
-    chunk_size_limit_n = min(chunk_size_limit, (pid_m + 1) * BLOCK_SIZE_M)
     acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     nheads_iter = min(nheads_per_program, nheads // ngroups - pid_s * nheads_per_program)
     for h in range(nheads_iter):
         dout = tl.load(dout_ptrs, mask=(offs_m[:, None] < chunk_size_limit) & (offs_k[None, :] < hdim), other=0.0)
-        x = tl.load(x_ptrs, mask=(offs_k[:, None] < hdim) & (offs_n[None, :] < chunk_size_limit_n), other=0.0)
+        x = tl.load(x_ptrs, mask=(offs_k[:, None] < hdim) & (offs_n[None, :] < chunk_size_limit), other=0.0)
         dcb = tl.dot(dout, x)
         dt_n = tl.load(dt_ptrs, mask=offs_n < chunk_size, other=0.0).to(tl.float32)
         dcb *= dt_n
-        if (pid_n * BLOCK_SIZE_N <= (pid_m + 1) * BLOCK_SIZE_M) & ((pid_n + 1) * BLOCK_SIZE_N >= (pid_m) * BLOCK_SIZE_M):
+        if (pid_n * BLOCK_SIZE_N < (pid_m + 1) * BLOCK_SIZE_M) and ((pid_n + 1) * BLOCK_SIZE_N > (pid_m) * BLOCK_SIZE_M):
             # We are in an intersection
             # This should be optimized better
             dA_cs_f_m = tl.load(dA_cumsum_f_ptr + offs_m * stride_dA_cs_f_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
@@ -843,18 +834,18 @@ def _chunk_scan_bwd_dcb_kernel(
             mask = offs_m[:, None] <= offs_n[None, :]
             A_b = tl.where(mask, tl.exp(dA_cs_b_m[:, None] - dA_cs_b_n[None, :]), 0.0)
             dcb *= A_f + A_b
-        elif (pid_n * BLOCK_SIZE_N <= (pid_m + 1) * BLOCK_SIZE_M):
-            # We are at a previous timestep
-            dA_cs_f_m = tl.load(dA_cumsum_f_ptr + offs_m * stride_dA_cs_f_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
-            dA_cs_f_n = tl.load(dA_cumsum_f_ptr + offs_n * stride_dA_cs_f_csize, mask=offs_n < chunk_size_limit, other=0.0).to(tl.float32)
-            mask = offs_m[:, None] >= offs_n[None, :]
-            dcb *= tl.where(mask, tl.exp(dA_cs_f_m[:, None] - dA_cs_f_n[None, :]), 0.0)
-        else:
+        elif (pid_n * BLOCK_SIZE_N >= (pid_m + 1) * BLOCK_SIZE_M):
             # We are at a later timestep
             dA_cs_b_m = tl.load(dA_cumsum_b_ptr + offs_m * stride_dA_cs_b_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
             dA_cs_b_n = tl.load(dA_cumsum_b_ptr + offs_n * stride_dA_cs_b_csize, mask=offs_n < chunk_size_limit, other=0.0).to(tl.float32)
             mask = offs_m[:, None] <= offs_n[None, :]
             dcb *= tl.where(mask, tl.exp(dA_cs_b_m[:, None] - dA_cs_b_n[None, :]), 0.0)
+        else:
+            # We are at a previous timestep
+            dA_cs_f_m = tl.load(dA_cumsum_f_ptr + offs_m * stride_dA_cs_f_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
+            dA_cs_f_n = tl.load(dA_cumsum_f_ptr + offs_n * stride_dA_cs_f_csize, mask=offs_n < chunk_size_limit, other=0.0).to(tl.float32)
+            mask = offs_m[:, None] >= offs_n[None, :]
+            dcb *= tl.where(mask, tl.exp(dA_cs_f_m[:, None] - dA_cs_f_n[None, :]), 0.0)
         acc += dcb
         dout_ptrs += stride_dout_head
         x_ptrs += stride_x_head
@@ -1724,6 +1715,7 @@ def _chunk_scan_bwd_dcb(x, dt, dA_cumsum_f, dA_cumsum_b, dout, ngroups=1):
             dcb.stride(0), dcb.stride(1), dcb.stride(2), dcb.stride(3), dcb.stride(4), dcb.stride(5),
             BLOCK_SIZE_K=max(triton.next_power_of_2(headdim), 16),
         )
+    # print(_chunk_scan_bwd_dcb_kernel.best_config.kwargs)
     dcb = dcb.sum(2)
     return dcb
 
