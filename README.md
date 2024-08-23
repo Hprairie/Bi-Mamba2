@@ -70,9 +70,16 @@ Alternatively you can also access it through a Module API, which is similar to a
 ```python
 from ssd import Mamba2
 
-layer = Mamba2(
-    causal=True
-)
+model = Mamba2(
+    # This module uses roughly 3 * expand * d_model^2 parameters
+    d_model=dim, # Model dimension d_model
+    d_state=64,  # SSM state expansion factor, typically 64 or 128
+    d_conv=4,    # Local convolution width
+    expand=2,    # Block expansion factor
+    causal=True  # Will Default to causal=True, when not specified
+).to("cuda")
+y = model(x)
+assert y.shape == x.shape
 ```
 
 **Causal Kernel**
@@ -80,9 +87,16 @@ layer = Mamba2(
 ```python
 from ssd import Mamba2
 
-layer = Mamba2(
-    causal=False
-)
+model = Mamba2(
+    # This module uses roughly 3 * expand * d_model^2 parameters
+    d_model=dim, # Model dimension d_model
+    d_state=64,  # SSM state expansion factor, typically 64 or 128
+    d_conv=4,    # Local convolution width
+    expand=2,    # Block expansion factor
+    causal=False # Will Default to causal=True, when not specified
+).to("cuda")
+y = model(x)
+assert y.shape == x.shape
 ```
 
 **Note** Currently using `seq_idx` like in Mamba2 causal is unsupported. Additionally `passing init_hidden_states` is also unsupported.

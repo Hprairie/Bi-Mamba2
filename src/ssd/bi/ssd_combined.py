@@ -115,7 +115,7 @@ def _chunk_scan_chunk_state_bwd_dx_kernel(
     dA_cs_b_m = tl.load(dA_cumsum_b_ptr + offs_m * stride_dA_cs_b_csize, mask=offs_m < chunk_size_limit, other=0.0).to(tl.float32)
 
     dA_cs_f_last = tl.load(dA_cumsum_f_ptr + (chunk_size - 1) * stride_dA_cs_f_csize).to(tl.float32)
-    dA_cs_b_last = tl.load(dA_cumsum_b_ptr) # The last of the backward cumsum is the first
+    dA_cs_b_last = tl.load(dA_cumsum_b_ptr).to(tl.float32) # The last of the backward cumsum is the first
     scale_f = tl.exp(dA_cs_f_last - dA_cs_f_m)
     scale_b = tl.exp(dA_cs_b_last - dA_cs_b_m)
     # Might be faster to just do 1 iteration with larger BLOCK_SIZE_K, up to block size 128
@@ -176,19 +176,19 @@ def _chunk_scan_chunk_state_bwd_dx_kernel(
         # we might have dA_cs_m = 0.0 and dA_cs_k very negative, and tl.exp will return inf.
         # Multiplying with cb, which is 0.0 outside the range, will make the result NaN.
         # This will cause NaN in acc, and hence NaN in dx and ddt.
-        if k <= K_F_MAX and k + BLOCK_SIZE_K >= K_F_MAX: # We need to do both forward and backward scans
+        if (k <= K_F_MAX + BLOCK_SIZE_M) or (k + BLOCK_SIZE_K >= K_F_MAX): # We need to do both forward and backward scans
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask_f = (k + offs_k[None, :] >= offs_m[:, None]) & (k + offs_k[None, :] < K_MAX)
-            cb_f = cb * tl.where(mask_f, tl.exp((dA_cs_f_k[None, :] - dA_cs_f_m[:, None])), 0.0)
+            a_f =  tl.where(mask_f, tl.exp((dA_cs_f_k[None, :] - dA_cs_f_m[:, None])), 0.0)
             dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
-            mask_b = k + offs_k[None, :] <= offs_m[:, None]
-            cb = cb_f + cb * tl.where(mask_b, tl.exp((dA_cs_b_k[None, :] - dA_cs_b_m[:, None])), 0.0)
+            mask_b = k + offs_k[None, :] <= offs_m[:, None] 
+            cb *= a_f + tl.where(mask_b, tl.exp((dA_cs_b_k[None, :] - dA_cs_b_m[:, None])), 0.0)
             #cb *= tl.exp(tl.where(mask_f, dA_cs_f_m[:, None] - dA_cs_f_k[None, :], 0.0) + tl.where(mask_b, dA_cs_b_m[:, None] - dA_cs_b_k[None, :], 0.0))
         elif k < K_F_MAX: # We need to only do the backward scans 
             dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
-            mask_b = k + offs_k[None, :] <= offs_m[:, None]
+            mask_b = k + offs_k[None, :] <= offs_m[:, None] 
             cb *= tl.where(mask_b, tl.exp((dA_cs_b_k[None, :] - dA_cs_b_m[:, None])), 0.0)
-        elif k > K_F_MAX: # We need to only do the foward scans
+        else: # We need to only do the foward scans
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask_f = (k + offs_k[None, :] >= offs_m[:, None]) & (k + offs_k[None, :] < K_MAX)
             cb *= tl.where(mask_f, tl.exp((dA_cs_f_k[None, :] - dA_cs_f_m[:, None])), 0.0)
