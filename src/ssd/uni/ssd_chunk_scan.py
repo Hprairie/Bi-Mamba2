@@ -1055,11 +1055,11 @@ def _chunk_scan_bwd_ddAcs_stable_kernel_old(
 @triton.autotune(
     configs=[
         triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4),
+        # triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4), # There is something wrong when M is less then N
+        # triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4),
+        # triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32}, num_stages=3, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64}, num_stages=3, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128}, num_stages=3, num_warps=4),
@@ -1133,7 +1133,7 @@ def _chunk_scan_bwd_ddAcs_stable_kernel(
         # If there's seq_idx, we already zero'ed out cb[i, j] for seq_idx[i] != seq_idx[j]
         cb = tl.load(cb_ptrs, mask=(offs_m[:, None] < chunk_size) & (offs_n[None, :] < chunk_size - start_n), other=0.0).to(tl.float32)
         acc *= cb
-        dA_cs_n = tl.load(dA_cumsum_ptr + start_n + offs_n * stride_dA_cs_csize, mask=offs_n < chunk_size - start_n, other=0.0).to(tl.float32)
+        dA_cs_n = tl.load(dA_cumsum_ptr + (start_n + offs_n) * stride_dA_cs_csize, mask=offs_n < chunk_size - start_n, other=0.0).to(tl.float32)
         acc *= tl.exp(dA_cs_m[:, None] - dA_cs_n[None, :])
         mask = offs_m[:, None] >= start_n + offs_n[None, :] + 1
         acc = tl.where(mask, acc, 0.0)
@@ -1141,6 +1141,7 @@ def _chunk_scan_bwd_ddAcs_stable_kernel(
         acc = rowsum[:, None] + tl.cumsum(acc, axis=1)
         rowsum = rowsum_new
         acc = tl.where(mask, acc, 0.0)
+        # print("acc", acc)
         ddA_cs = tl.sum(acc, axis=0)
         tl.store(ddAcs_ptrs + stride_ddA_cs_csize_n, ddA_cs, mask=offs_n < chunk_size - start_n - 1)
         x_ptrs += BLOCK_SIZE_N * stride_x_seqlen
@@ -1666,7 +1667,9 @@ def _chunk_scan_bwd_ddAcs_stable(x, dt, dA_cumsum, dout, cb):
             BLOCK_SIZE_K=max(triton.next_power_of_2(headdim), 16),
         )
     BLOCK_SIZE_M_actual = _chunk_scan_bwd_ddAcs_stable_kernel.best_config.kwargs["BLOCK_SIZE_M"]
+    # print(_chunk_scan_bwd_ddAcs_stable_kernel.best_config.kwargs)
     n_valid_blocks = (chunk_size + BLOCK_SIZE_M_actual - 1) // BLOCK_SIZE_M_actual
+    # print(ddA_cumsum)
     ddA_cumsum = ddA_cumsum[:, :, :, :n_valid_blocks].sum(dim=3)
     return ddA_cumsum
 
