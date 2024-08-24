@@ -1077,7 +1077,7 @@ def _chunk_scan_bwd_ddAcs_stable_kernel_old(
     key=['chunk_size', 'hdim'],
 )
 @triton.jit
-def _chunk_scan_bwd_ddAcs_stable_bwd_kernel(
+def _chunk_scan_bwd_ddAcs_stable_bwd_kernel( # This kernel is super slow for some reason (NEED TO FIX)
     # Pointers to matrices
     x_ptr, dout_ptr, dt_ptr, dA_cumsum_ptr, cb_ptr,
     ddA_cumsum_ptr,
@@ -1128,6 +1128,7 @@ def _chunk_scan_bwd_ddAcs_stable_bwd_kernel(
     lo, hi = start, ((pid_m * BLOCK_SIZE_M) // BLOCK_SIZE_N) * BLOCK_SIZE_N - 1
     # lo, hi = 0, chunk_size
     for start_n in range(lo, hi, -BLOCK_SIZE_N):
+        tl.multiple_of(start_n, BLOCK_SIZE_N)
         x = tl.load(x_ptrs, mask=(offs_k[:, None] < hdim) & (offs_n[None, :] < chunk_size_limit - start_n), other=0.0)
         acc = tl.dot(dout, x)
         dt_n = tl.load(dt_ptrs, mask=offs_n < chunk_size - start_n, other=0.0).to(tl.float32)
@@ -1234,7 +1235,7 @@ def _chunk_scan_bwd_ddAcs_stable_bwd_old_kernel(
         mask = offs_m[:, None] <= offset + offs_n[None, :] - 1
         acc = tl.where(mask, acc, 0.0)
         rowsum_new = rowsum + tl.sum(acc, axis=1)
-        acc = rowsum[:, None] + tl.cumsum(acc, axis=1)
+        acc = rowsum[:, None] + tl.cumsum(acc, axis=1, reverse=True)
         rowsum = rowsum_new
         acc = tl.where(mask, acc, 0.0)
         ddA_cs = tl.sum(acc, axis=0)
