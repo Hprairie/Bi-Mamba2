@@ -132,6 +132,7 @@ Comparison of bwd pass of Bi-Mamba2 v. causal Mamba2.
 ...
 
 ## 4060 Ti and Ryzen 9 8945HS
+Comparison of bwd pass of Bi-Mamba2 v. Naive Flipping v. Causal Mamba2.
 
 <p align="center">
   <img src="assets/Bwd_Comparisson.png" width="800" />
