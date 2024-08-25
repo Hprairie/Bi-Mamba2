@@ -6,9 +6,8 @@ To overcome this issue, I wrote the following GPU kernel which both reduces the 
 
 # NOTE
 
-The fwd kernel is implemented, tested, and benchmarked. The bwd kernel is still in progress. I will remove this note when it's done. The bwd is written, just needs to be debugged and tested.
+Bwd is almost done, working on fixing final bugs with gradients. I will remove this note when completed.
 
-- The wait is almost over (everything seems to be passing tests, just `_chunk_scan_bwd_ddA_cs_bwd` is super slow). I will be optimizing this kernel in the next few days as it should be very fast, i.e only ~.4 ms overhead over the causal version at all seqlengths.
 
 # A Brief Overview of Bidirectionality in Mamba
 
@@ -134,7 +133,9 @@ Comparison of bwd pass of Bi-Mamba2 v. causal Mamba2.
 
 ## 4060 Ti and Ryzen 9 8945HS
 
-Coming Soon
+<p align="center">
+  <img src="assets/Bwd_Comparison.png" width="800" />
+</p>
 
 ## A100 40GB and Epyc 7763
 

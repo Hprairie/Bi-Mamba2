@@ -44,8 +44,8 @@ def bi_fwd(x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus):
         x_vals=[2**i for i in range(1, 14, 1)],  # Different possible values for `x_name`.
         x_log=True,  # x axis is logarithmic.
         line_arg='provider',  # Argument name whose value corresponds to a different line in the plot.
-        line_vals=['Native Mamba2', 'Bi-Mamba2'],  # Possible values for `line_arg`.
-        line_names=['Native Mamba2', 'Bi-Mamba2'],  # Label name for the lines.
+        line_vals=['Naive Mamba2', 'Bi-Mamba2'],  # Possible values for `line_arg`.
+        line_names=['Naive Mamba2', 'Bi-Mamba2'],  # Label name for the lines.
         styles=[('blue', '-'), ('green', '-')],  # Line styles.
         ylabel='ms',  # Label name for the y-axis.
         plot_name='Bidirectional Mamba Performance',  # Name for the plot. Used also as a file name for saving the plot.
@@ -54,7 +54,7 @@ def bi_fwd(x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus):
 def benchmark(seqlen, provider):
     x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus = init(seqlen)
     quantiles = [0.5, 0.2, 0.8]
-    if provider == 'Native Mamba2':
+    if provider == 'Naive Mamba2':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: uni_fwd(x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus), quantiles=quantiles, rep=2000, warmup=500)
     if provider == 'Bi-Mamba2':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: bi_fwd(x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus), quantiles=quantiles, rep=2000, warmup=500)

@@ -36,6 +36,12 @@ def uni_fwd(dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softp
             )
     return dx + dx2.flip([1]), ddt + ddt2.flip([1]), dA + dA2, dB + dB2.flip([1]), dC + dC2.flip([1]), dD + dD2, dz + dz2.flip([1]), ddt_bias + ddt_bias2
 
+def causal_fwd(dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus):
+    dx, ddt, dA, dB, dC, dD, dz, ddt_bias, _ = _mamba_chunk_scan_combined_bwd(
+            dout=dout, out=out, x=x, dt=dt, A=A, B=B, C=C, D=D, dt_bias=delta_bias, z=z, chunk_size=chunk_size, dt_softplus=delta_softplus,
+            )
+    return dx, ddt, dA, dB, dC, dD, dz, ddt_bias
+
 def bi_fwd(dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus):
     dx, ddt, dA, dB, dC, dD, dz, ddt_bias = _mamba_chunk_scan_combined_bwd_bi(dout=dout, out=out, x=x, dt=dt, A=A, B=B, C=C, D=D, dt_bias=delta_bias, z=z, chunk_size=chunk_size, dt_softplus=delta_softplus)
     return dx, ddt, dA, dB, dC, dD, dz, ddt_bias
@@ -46,20 +52,22 @@ def bi_fwd(dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softpl
         x_vals=[2**i for i in range(1, 14, 1)],  # Different possible values for `x_name`.
         x_log=True,  # x axis is logarithmic.
         line_arg='provider',  # Argument name whose value corresponds to a different line in the plot.
-        line_vals=['Naive Mamba2', 'Bi-Mamba2'],  # Possible values for `line_arg`.
-        line_names=['Naive Mamba2', 'Bi-Mamba2'],  # Label name for the lines.
-        styles=[('blue', '-'), ('green', '-')],  # Line styles.
+        line_vals=['Naive Mamba2', 'Bi-Mamba2', 'Causal Mamba2'],  # Possible values for `line_arg`.
+        line_names=['Naive Mamba2', 'Bi-Mamba2', 'Causal Mamba2'],  # Label name for the lines.
+        styles=[('blue', '-'), ('green', '-'), ('red', '-')],  # Line styles.
         ylabel='ms',  # Label name for the y-axis.
-        plot_name='Bidirectional Mamba Performance',  # Name for the plot. Used also as a file name for saving the plot.
+        plot_name='Bi-Directional Bwd Pass Mamba Performance',  # Name for the plot. Used also as a file name for saving the plot.
         args={},  # Values for function arguments not in `x_names` and `y_name`.
     ))
 def benchmark(seqlen, provider):
     dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus = init(seqlen)
     quantiles = [0.5, 0.2, 0.8]
-    if provider == 'Natve Mamba2':
+    if provider == 'Naive Mamba2':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: uni_fwd(dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus), quantiles=quantiles, rep=2000, warmup=500)
     if provider == 'Bi-Mamba2':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: bi_fwd(dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus), quantiles=quantiles, rep=2000, warmup=500)
+    if provider == 'Causal Mamba2':
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: causal_fwd(dout, out, x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus), quantiles=quantiles, rep=2000, warmup=500)
     return ms, max_ms, min_ms
     gbps = lambda ms: 3 * exp.numel() * exp.element_size() / ms * 1e-6
     return gbps(ms), gbps(max_ms), gbps(min_ms)
