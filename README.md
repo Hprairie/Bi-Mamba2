@@ -134,7 +134,7 @@ Comparison of bwd pass of Bi-Mamba2 v. causal Mamba2.
 ## 4060 Ti and Ryzen 9 8945HS
 
 <p align="center">
-  <img src="assets/Bwd_Comparison.png" width="800" />
+  <img src="assets/Bwd_Comparisson.png" width="800" />
 </p>
 
 ## A100 40GB and Epyc 7763
