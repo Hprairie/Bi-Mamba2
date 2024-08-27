@@ -4,11 +4,6 @@ Several works such as Hydra and MambaMixer have formulated bidirectionality thro
 
 To overcome this issue, I wrote the following GPU kernel which both reduces the memory overhead and the latency. It does so by fusing kernels together to minimize the number of loads and stores from global memory.
 
-# NOTE
-
-Bwd is almost done, working on fixing final bugs with gradients. I will remove this note when completed.
-
-
 # A Brief Overview of Bidirectionality in Mamba
 
 The idea of bi-directionality is to formulate the "Attention Matrix" as a quasiseperable matrix, meaning that the matrix can be decomposed into two semiseperable matrices and a diagonal matrix. The formulation is still subquadratic, as both semiseperable matrices and the diagonal matrix can be computed linearly. Hydra formulates the quasiseperable matrix in the following format:
@@ -36,15 +31,6 @@ You can access the normal `ssd` kernels through `ssd.uni`. You can access the bi
 ### Installing with PyPi
 
 Coming soon.
-
-# TODO:
-
-- [x] Write FWD Implementation
-- [x] Debug and Test FWD implementation
-- [x] Write BWD Implementation
-- [ ] Debug and Test BWD Implementation
-- [ ] Create PyPi Package
-- [ ] Add more benchmarks
 
 # Modules and API
 
@@ -102,60 +88,57 @@ assert y.shape == x.shape
 
 **Note** Currently using `seq_idx` like in Mamba2 causal is unsupported. Additionally `passing init_hidden_states` is also unsupported.
 
+# TODO:
+
+- [x] Write FWD Implementation
+- [x] Debug and Test FWD implementation
+- [x] Write BWD Implementation
+- [x] Debug and Test BWD Implementation
+- [ ] Create PyPi Package
+- [ ] Add more benchmarks
+
 # Benchmarking
 
 The benchmarking code can be found in the `benchmark` folder. It can be run by using the following command:
 
 ```
-python benchmark/benchmark_fwd_naive.py
+python benchmark/benchmark_fwd_all.py
 ```
 
-## AMD 7900 XTX and 3970X Threadripper
+To find additonal benchmarks, please checkout (BENCHMARKS.md)[BENCHMARKS.md].
 
-Comparison of fwd pass of Bi-Mamba2 v. Naive Flipping and Running Mamba2 kernel twice.
-<p align="center">
-  <img src="assets/Naive_Comparison.png" width="800" />
-</p>
+### Speed
 
-Comparison of fwd pass of Bi-Mamba2 v. causal Mamba2.
+Bi-Mamba2 is almost ~3x-4x times faster then naively flipping and accumulating the $SS()$ operation, and only ~1.25x slower then causal Mamba2.
 
-<p align="center">
-  <img src="assets/Causal_Comparison.png" width="800" />
-</p>
+Here is a comparisson of the fwd pass of Bi-Mamba2 v. Naively Flipping Mamba2 v. Causal Mamba2.
 
-Comparison of bwd pass of Bi-Mamba2 v. Naive Flipping and Running Mamba2 kernel twice.
-
-...
-
-Comparison of bwd pass of Bi-Mamba2 v. causal Mamba2.
-
-...
-
-## 4060 Ti and Ryzen 9 8945HS
-Comparison of bwd pass of Bi-Mamba2 v. Naive Flipping v. Causal Mamba2.
+Here is a comparisson of the bwd pass of Bi-Mamba2 v. Naively Flipping Mamba2 v. Causal Mamba2.
 
 <p align="center">
   <img src="assets/Bwd_Comparisson.png" width="800" />
 </p>
 
-## A100 40GB and Epyc 7763
+### Memory
 
-Coming Soon
-
-## H200 and Grace Chip
-
-Coming Soon
+Memory benchmarks coming soon.
 
 # Tests
 
-To run a test, simply use pytest along with the specific test file. For example, to run a test for the fwd pass of the kernel, use:
+I created a fairly through test suite to ensure that Bi-Mamba2 is correct. To run a test, simply use pytest along with the specific test file. For example, to run a test for the fwd pass of the kernel, use:
 
 ```
 python -m pytest -x -s -v tests/test_fwd_scan.py::TestFwd
 ```
+
+If you find a bug please tell me, and I'll fix it as fast as I can.
 
 # Citation
 
 If you find this kernel useful please cite Mamba, Hydra, and MambaMixer (They are amazing works!).
 
 Give this repo a star also :)
+
+# References
+ 
+This library use's Mamba2's Triton kernel as a starting ground. The kernel's change a significant amount to support bi-directionality, however, the underlying algorithm and idea is still Albert Gu's and Tri Dao's.
