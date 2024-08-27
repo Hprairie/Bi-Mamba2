@@ -77,10 +77,10 @@ def chunk_scan_bwd_dx_compare(create_chunk_scan_bwd_dx_tensors):
 
     rtol, atol = (6e-4, 2e-3)
 
-    # print(dx)
-    # print(dx_b)
-    # print(dx + dx_b)
-    # print(dx_ref)
+    print(dx)
+    print(dx_b)
+    print(dx + dx_b)
+    print(dx_ref)
 
     assert_close(dx + dx_b, dx_ref, rtol=rtol, atol=atol)
     assert_close(ddt + ddt_b, ddt_ref, rtol=rtol, atol=atol)

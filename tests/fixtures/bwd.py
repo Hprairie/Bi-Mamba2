@@ -70,11 +70,13 @@ def bwd_compare(create_bwd_scan_tensors):
 
     rtol, atol = (6e-4, 2e-3)
 
+    # print(ddt + ddt_2.flip([1]))
+    # print(ddt_ref)
     assert_close(dx + dx_2.flip([1]), dx_ref, rtol=rtol, atol=atol)
-    assert_close(ddt + ddt_2.flip([1]), ddt_ref, rtol=rtol, atol=atol)
-    assert_close(dA + dA_2, dA_ref, rtol=rtol, atol=atol)
     assert_close(dB + dB_2.flip([1]), dB_ref, rtol=rtol, atol=atol)
     assert_close(dC + dC_2.flip([1]), dC_ref, rtol=rtol, atol=atol)
+    assert_close(dA + dA_2, dA_ref, rtol=rtol, atol=atol)
+    assert_close(ddt + ddt_2.flip([1]), ddt_ref, rtol=rtol, atol=atol)
     if D is not None:
         assert_close(dD + dD_2, dD_ref, rtol=rtol, atol=atol)
     if z is not None:

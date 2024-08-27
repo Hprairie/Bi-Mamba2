@@ -375,7 +375,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
     CB = _bmm_chunk_fwd(C, B, chunk_size, output_dtype=torch.float32)
     states_f, states_b = _chunk_state_fwd(B, x, dt, dA_cumsum_f, dA_cumsum_b, states_in_fp32=True)
     states_f, _ = _state_passing_fwd(rearrange(states_f, "... p n -> ... (p n)"), dA_cumsum_f[:, :, :, -1], chunk_size=chunk_size)
-    states_b, _ = _state_passing_fwd(rearrange(states_b, "... p n -> ... (p n)"), dA_cumsum_b[:, :, :, 0], chunk_size=chunk_size)
+    states_b, _ = _state_passing_fwd(rearrange(states_b, "... p n -> ... (p n)"), dA_cumsum_b[:, :, :, 0], chunk_size=chunk_size, reverse=True)
     states_f = rearrange(states_f, "... (p n) -> ... p n", n=dstate)
     states_b = rearrange(states_b, "... (p n) -> ... p n", n=dstate)
     if z is not None:
@@ -404,6 +404,7 @@ def _mamba_chunk_scan_combined_bwd(dout, x, dt, A, B, C, out, chunk_size, D=None
         dstates_dtype=x.dtype,
         states_dtype=x.dtype,
         chunk_size=chunk_size,
+        reverse=True
     )
 
     # dstates has length nchunks, containing the gradient to states of chunk 0 at index 0 and

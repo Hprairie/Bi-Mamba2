@@ -6,7 +6,7 @@ import pytest
 from fixtures.state_passing_bwd import state_bwd_passing_compare 
 
 
-@pytest.mark.parametrize("batch", [1])
+@pytest.mark.parametrize("batch", [2])
 @pytest.mark.parametrize("nchunks", [2, 4, 8])
 @pytest.mark.parametrize("nheads", [4])
 @pytest.mark.parametrize("dim", [1, 2, 32])
