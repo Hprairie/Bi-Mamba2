@@ -32,7 +32,7 @@ You can access the normal `ssd` kernels through `ssd.uni`. You can access the bi
 
 Coming soon.
 
-# Modules and API
+# Modules and API (WILL BE SETUP SOON)
 
 There will be both a functional and layerwise access to the bi-directional kernel. I have outlined both below:
 
