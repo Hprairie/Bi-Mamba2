@@ -34,59 +34,74 @@ Coming soon.
 
 # Modules and API
 
-There is two ways to access the Bi-directional kernel. The first is through the functional definition. For example, if you want to run a chunk-wise bi-directional selective scan, you can do so with the following snippet:
+There will be both a functional and layerwise access to the bi-directional kernel. I have outlined both below:
 
-**Causal Kernel**
+## Functional API
 
-```python
-from ssd import ssd_selective_scan
-
-```
-
-**Bi-Directional Kernel**
+Currently, I have the functional access the bi-directional kernel. To access the kernel, use the following import:
 
 ```python
-from ssd import bi_ssd_selective_scan
+from ssd.bi.ssd_combined import bimamba_chunk_scan_combined
 
-```
-
-Alternatively, you can also access it through a Module API, which is similar to a Mamba2 Layer:
-
-**Causal Kernel**
-
-```python
-from ssd import Mamba2
-
-model = Mamba2(
-    # This module uses roughly 3 * expand * d_model^2 parameters
-    d_model=dim, # Model dimension d_model
-    d_state=64,  # SSM state expansion factor, typically 64 or 128
-    d_conv=4,    # Local convolution width
-    expand=2,    # Block expansion factor
-    causal=True  # Will Default to causal=True, when not specified
-).to("cuda")
-y = model(x)
-assert y.shape == x.shape
-```
-
-**Bi-Directional Kernel**
-
-```python
-from ssd import Mamba2
-
-model = Mamba2(
-    # This module uses roughly 3 * expand * d_model^2 parameters
-    d_model=dim, # Model dimension d_model
-    d_state=64,  # SSM state expansion factor, typically 64 or 128
-    d_conv=4,    # Local convolution width
-    expand=2,    # Block expansion factor
-    causal=False # Will Default to causal=True, when not specified
-).to("cuda")
-y = model(x)
-assert y.shape == x.shape
+# The Doc string of bimamba_chunk_scan_combined
+def bimamba_chunk_scan_combined(...) -> torch.Tensor:
+    """
+    Argument:
+        x: (batch, seqlen, nheads, headdim)
+        dt: (batch, seqlen, nheads)
+        A: (nheads)
+        B: (batch, seqlen, ngroups, dstate)
+        C: (batch, seqlen, ngroups, dstate)
+        chunk_size: int
+        D: (nheads, headdim) or (nheads,)
+        z: (batch, seqlen, nheads, headdim)
+        dt_bias: (nheads,)
+        dt_softplus: Whether to apply softplus to dt
+    Return:
+        out: (batch, seqlen, nheads, headdim)
+    """
+    ...
 ```
 
 **Note** Currently using `seq_idx` like in Mamba2 causal is unsupported. Additionally `passing init_hidden_states` is also unsupported.
+
+## Module API (Coming Soon)
+
+Alternatively, you can also access it through a Module API, which is similar to a Mamba2 Layer:
+
+<!-- **Causal Kernel** -->
+<!---->
+<!-- ```python -->
+<!-- from ssd import Mamba2 -->
+<!---->
+<!-- model = Mamba2( -->
+<!--     # This module uses roughly 3 * expand * d_model^2 parameters -->
+<!--     d_model=dim, # Model dimension d_model -->
+<!--     d_state=64,  # SSM state expansion factor, typically 64 or 128 -->
+<!--     d_conv=4,    # Local convolution width -->
+<!--     expand=2,    # Block expansion factor -->
+<!--     causal=True  # Will Default to causal=True, when not specified -->
+<!-- ).to("cuda") -->
+<!-- y = model(x) -->
+<!-- assert y.shape == x.shape -->
+<!-- ``` -->
+<!---->
+<!-- **Bi-Directional Kernel** -->
+<!---->
+<!-- ```python -->
+<!-- from ssd import Mamba2 -->
+<!---->
+<!-- model = Mamba2( -->
+<!--     # This module uses roughly 3 * expand * d_model^2 parameters -->
+<!--     d_model=dim, # Model dimension d_model -->
+<!--     d_state=64,  # SSM state expansion factor, typically 64 or 128 -->
+<!--     d_conv=4,    # Local convolution width -->
+<!--     expand=2,    # Block expansion factor -->
+<!--     causal=False # Will Default to causal=True, when not specified -->
+<!-- ).to("cuda") -->
+<!-- y = model(x) -->
+<!-- assert y.shape == x.shape -->
+<!-- ``` -->
 
 # TODO:
 
@@ -112,6 +127,10 @@ To find additonal benchmarks, please checkout (BENCHMARKS.md)[BENCHMARKS.md].
 Bi-Mamba2 is almost ~3x-4x times faster then naively flipping and accumulating the $SS()$ operation, and only ~1.25x slower then causal Mamba2.
 
 Here is a comparisson of the fwd pass of Bi-Mamba2 v. Naively Flipping Mamba2 v. Causal Mamba2.
+
+<p align="center">
+  <img src="assets/Fwd_Comparisson.png" width="800" />
+</p>
 
 Here is a comparisson of the bwd pass of Bi-Mamba2 v. Naively Flipping Mamba2 v. Causal Mamba2.
 

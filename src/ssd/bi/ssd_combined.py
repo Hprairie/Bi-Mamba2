@@ -586,9 +586,6 @@ def bimamba_chunk_scan_combined(x, dt, A, B, C, chunk_size, D=None, z=None, dt_b
         D: (nheads, headdim) or (nheads,)
         z: (batch, seqlen, nheads, headdim)
         dt_bias: (nheads,)
-        initial_states: (batch, nheads, headdim, dstate)
-        seq_idx: (batch, seqlen)
-        cu_seqlens: (num_sequences + 1) or None, only used if return_varlen_states is True
         dt_softplus: Whether to apply softplus to dt
     Return:
         out: (batch, seqlen, nheads, headdim)

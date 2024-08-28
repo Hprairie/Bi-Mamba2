@@ -50,9 +50,9 @@ def bi_fwd(x, dt, A, B, C, D, delta_bias, z, chunk_size, delta_softplus):
         x_vals=[2**i for i in range(1, 14, 1)],  # Different possible values for `x_name`.
         x_log=True,  # x axis is logarithmic.
         line_arg='provider',  # Argument name whose value corresponds to a different line in the plot.
-        line_vals=['Causal Mamba2', 'Bi-Mamba2', 'Naive Mamba2'],  # Possible values for `line_arg`.
-        line_names=['Causal Mamba2', 'Bi-Mamba2', 'Naive Mamba2'],  # Label name for the lines.
-        styles=[('blue', '-'), ('green', '-')],  # Line styles.
+        line_vals=['Naive Mamba2', 'Bi-Mamba2', 'Causal Mamba2'],  # Possible values for `line_arg`.
+        line_names=['Naive Mamba2', 'Bi-Mamba2', 'Causal Mamba2'],  # Label name for the lines.
+        styles=[('blue', '-'), ('green', '-'), ('red', '-')],  # Line styles.
         ylabel='ms',  # Label name for the y-axis.
         plot_name='Mamba Bidirectional Fwd Pass Performance',  # Name for the plot. Used also as a file name for saving the plot.
         args={},  # Values for function arguments not in `x_names` and `y_name`.
