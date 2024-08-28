@@ -120,7 +120,7 @@ The benchmarking code can be found in the `benchmark` folder. It can be run by u
 python benchmark/benchmark_fwd_all.py
 ```
 
-To find additonal benchmarks, please checkout (BENCHMARKS.md)[BENCHMARKS.md].
+To find additonal benchmarks, please checkout [BENCHMARKS.md](BENCHMARKS.md).
 
 ### Speed
 
