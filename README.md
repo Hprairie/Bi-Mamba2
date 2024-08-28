@@ -120,7 +120,7 @@ The benchmarking code can be found in the `benchmark` folder. It can be run by u
 python benchmark/benchmark_fwd_all.py
 ```
 
-To find additonal benchmarks, please checkout (BENCHMARKS.md)[BENCHMARKS.md].
+To find additonal benchmarks, please checkout [BENCHMARKS.md](BENCHMARKS.md).
 
 ### Speed
 
@@ -129,7 +129,7 @@ Bi-Mamba2 is almost ~3x-4x times faster then naively flipping and accumulating t
 Here is a comparisson of the fwd pass of Bi-Mamba2 v. Naively Flipping Mamba2 v. Causal Mamba2.
 
 <p align="center">
-  <img src="assets/Fwd_Comparisson.png" width="800" />
+  <img src="assets/Fwd_Comparison.png" width="800" />
 </p>
 
 Here is a comparisson of the bwd pass of Bi-Mamba2 v. Naively Flipping Mamba2 v. Causal Mamba2.
