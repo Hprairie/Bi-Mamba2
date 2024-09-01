@@ -557,7 +557,7 @@ class MambaChunkScanCombinedFn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, dt, A, B, C, chunk_size, D=None, z=None, dt_bias=None, dt_softplus=False, dt_limit=(0.0, float("inf")), return_final_states=False):
         ctx.dt_dtype = dt.dtype
-        out, out_x, dt, dA_cumsum_f, dA_cumsum_b, states_f, states_b, final_states_f, final_states_b = _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=D, z=z, dt_bias=dt_bias, dt_softplus=dt_softplus, dt_limit=dt_limit)
+        out, out_x, dt_out, dA_cumsum_f, dA_cumsum_b, states_f, states_b, final_states_f, final_states_b = _mamba_chunk_scan_combined_fwd(x, dt, A, B, C, chunk_size, D=D, z=z, dt_bias=dt_bias, dt_softplus=dt_softplus, dt_limit=dt_limit)
         ctx.save_for_backward(out if z is None else out_x, x, dt, dA_cumsum_f, dA_cumsum_b, A, B, C, D, z, dt_bias)
         ctx.dt_softplus = dt_softplus
         ctx.chunk_size = chunk_size
