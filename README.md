@@ -32,13 +32,13 @@ You can access the normal `ssd` kernels through `ssd.uni`. You can access the bi
 
 Coming soon.
 
-# Modules and API (WILL BE SETUP SOON)
+# Modules and API
 
 There will be both a functional and layerwise access to the bi-directional kernel. I have outlined both below:
 
 ## Functional API
 
-Currently, I have the functional access the bi-directional kernel. To access the kernel, use the following import:
+Currently, the functional access the bi-directional kernel can be done using the following import:
 
 ```python
 from ssd.bi.ssd_combined import bimamba_chunk_scan_combined
@@ -65,7 +65,7 @@ def bimamba_chunk_scan_combined(...) -> torch.Tensor:
 
 **Note** Currently using `seq_idx` like in Mamba2 causal is unsupported. Additionally `passing init_hidden_states` is also unsupported.
 
-## Module API (Coming Soon)
+## Module API
 
 Alternatively, you can also access it through a Module API, which is similar to a Mamba2 Layer:
 
@@ -86,22 +86,26 @@ Alternatively, you can also access it through a Module API, which is similar to 
 <!-- assert y.shape == x.shape -->
 <!-- ``` -->
 <!---->
-<!-- **Bi-Directional Kernel** -->
-<!---->
-<!-- ```python -->
-<!-- from ssd import Mamba2 -->
-<!---->
-<!-- model = Mamba2( -->
-<!--     # This module uses roughly 3 * expand * d_model^2 parameters -->
-<!--     d_model=dim, # Model dimension d_model -->
-<!--     d_state=64,  # SSM state expansion factor, typically 64 or 128 -->
-<!--     d_conv=4,    # Local convolution width -->
-<!--     expand=2,    # Block expansion factor -->
-<!--     causal=False # Will Default to causal=True, when not specified -->
-<!-- ).to("cuda") -->
-<!-- y = model(x) -->
-<!-- assert y.shape == x.shape -->
-<!-- ``` -->
+**Bi-Directional Kernel**
+
+```python
+import torch
+from ssd.modules import BiMamba2
+
+batch, length, dim = 2, 64, 32
+x = torch.randn(batch, length, dim).to("cuda")
+model = BiMamba2(
+    d_model=dim, # Model dimension d_model
+    d_state=64,  # SSM state expansion factor
+    d_conv=7,    # Local non-causal convolution width
+    expand=2,    # Block expansion factor
+    use_mem_eff_path=False,    # Use memory efficient path is not allowed yet
+).to("cuda")
+y = model(x)
+assert y.shape == x.shape
+g = torch.randn_like(y)
+y.backward(g)
+```
 
 # TODO:
 
