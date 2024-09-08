@@ -174,7 +174,7 @@ class BiMamba2(nn.Module):
             rearrange(B, "b l (g n) -> b l g n", g=self.ngroups),
             rearrange(C, "b l (g n) -> b l g n", g=self.ngroups),
             chunk_size=self.chunk_size,
-            D=None,
+            D=self.D,
             z=None,
             **dt_limit_kwargs,
         )
