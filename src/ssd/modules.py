@@ -71,7 +71,7 @@ class BiMamba2(nn.Module):
             bias=conv_bias,
             kernel_size=d_conv,
             groups=conv_dim,
-            padding=d_conv // 2,
+            padding="same",
             **factory_kwargs,
         )
         if self.conv_init is not None:
@@ -165,7 +165,6 @@ class BiMamba2(nn.Module):
 
         # Split into 3 main branches: X, B, C
         # These correspond to V, K, Q respectively in the SSM/attention duality
-        print(xBC.shape)
         x, B, C = torch.split(xBC, [self.d_inner, self.ngroups * self.d_state, self.ngroups * self.d_state], dim=-1)
         y = bimamba_chunk_scan_combined(
             rearrange(x, "b l (h p) -> b l h p", p=self.headdim),

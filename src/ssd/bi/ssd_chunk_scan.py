@@ -133,15 +133,21 @@ def _chunk_scan_fwd_kernel(
     dA_cumsum_f_ptrs = dA_cumsum_f_ptr + offs_k * stride_dA_cs_f_csize
     dA_cumsum_b_ptrs = dA_cumsum_b_ptr + offs_k * stride_dA_cs_b_csize
     K_F_MAX = min((pid_m) * BLOCK_SIZE_M, chunk_size_limit)
+    K_F_MAX_BEG = K_F_MAX - BLOCK_SIZE_K
     for k in range(0, chunk_size_limit, BLOCK_SIZE_K):
         cb = tl.load(cb_ptrs, mask=(offs_m[:, None] < chunk_size) & (offs_k[None, :] < chunk_size - k), other=0.0).to(tl.float32)
-        if k <= K_F_MAX and k + BLOCK_SIZE_K >= K_F_MAX: # Mimic self attention
+        if k <= K_F_MAX and k >= K_F_MAX_BEG: # Mimic self attention
+            # Forward style calculations
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask_f = offs_m[:, None] >= (k + offs_k[None, :])
-            cb_f = cb * tl.where(mask_f, tl.exp((dA_cs_f_m[:, None] - dA_cs_f_k[None, :])), 0.0)
+            scale_f = tl.where(mask_f, tl.exp((dA_cs_f_m[:, None] - dA_cs_f_k[None, :])), 0.0)
+
+            # Backward style calculations
             dA_cs_b_k = tl.load(dA_cumsum_b_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
             mask_b = offs_m[:, None] <= (k + offs_k[None, :])
-            cb = cb_f + cb * tl.where(mask_b, tl.exp((dA_cs_b_m[:, None] - dA_cs_b_k[None, :])), 0.0)
+            scale_b = tl.where(mask_b, tl.exp((dA_cs_b_m[:, None] - dA_cs_b_k[None, :])), 0.0)
+
+            cb = cb * (scale_f + scale_b)
             #cb *= tl.exp(tl.where(mask_f, dA_cs_f_m[:, None] - dA_cs_f_k[None, :], 0.0) + tl.where(mask_b, dA_cs_b_m[:, None] - dA_cs_b_k[None, :], 0.0))
         elif k < K_F_MAX: # Mimic causal fwd attention
             dA_cs_f_k = tl.load(dA_cumsum_f_ptrs, mask=offs_k < chunk_size - k, other=0.0).to(tl.float32)
